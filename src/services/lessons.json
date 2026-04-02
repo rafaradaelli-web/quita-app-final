@@ -1,0 +1,77 @@
+[
+  {
+    "id": 1,
+    "order_index": 1,
+    "title": "Raio-X da dívida",
+    "subtitle": "Mapeie todas as suas dívidas",
+    "xp": 30,
+    "theme": "divida",
+    "content": "Você sabe exatamente quanto deve? A maioria dos brasileiros não sabe. O primeiro passo pra sair das dívidas não é pagar nada — é anotar tudo. Cada dívida: pra quem deve, quanto, qual o juros, e a parcela mínima.",
+    "highlight": { "number": "80,2% das famílias", "label": "têm alguma dívida. Você não está sozinho." },
+    "questions": [
+      { "q": "Qual é o primeiro passo pra sair das dívidas?", "opts": ["Cortar o cartão", "Anotar todas as dívidas", "Pegar empréstimo"], "correct": 1, "explain": "Antes de qualquer ação, saiba o tamanho do problema." },
+      { "q": "O que anotar sobre cada dívida?", "opts": ["Só o valor total", "Credor, valor, juros e parcela", "Só o nome do banco"], "correct": 1, "explain": "Cada detalhe importa. O juros define a urgência." },
+      { "q": "Qual % de famílias tem dívida?", "opts": ["Cerca de 50%", "Cerca de 65%", "Mais de 80%"], "correct": 2, "explain": "80,2%! Você não está sozinho nessa." }
+    ]
+  },
+  {
+    "id": 2,
+    "order_index": 2,
+    "title": "Juros compostos",
+    "subtitle": "O inimigo silencioso",
+    "xp": 30,
+    "theme": "divida",
+    "content": "R$ 1.000 no cartão a 15%/mês. Se não pagar, no mês seguinte são R$ 1.150. Depois R$ 1.322. Em 12 meses: R$ 5.350. Juros sobre juros — sua dívida acelera. Pagar só o mínimo é armadilha.",
+    "highlight": { "number": "R$ 1.000 → R$ 5.350", "label": "em 12 meses com juros de cartão." },
+    "questions": [
+      { "q": "O que são juros compostos?", "opts": ["Juros fixos", "Juros sobre o valor original", "Juros sobre juros"], "correct": 2, "explain": "Juros sobre o valor atualizado — por isso acelera." },
+      { "q": "R$ 1.000 a 15%/mês vira quanto em 1 ano?", "opts": ["R$ 2.800", "R$ 5.350", "R$ 1.500"], "correct": 1, "explain": "Multiplica por 5x em 12 meses!" },
+      { "q": "Por que o mínimo do cartão é perigoso?", "opts": ["Banco cancela", "Juros crescem no saldo", "Perde pontos"], "correct": 1, "explain": "O restante rende juros compostos todo mês." }
+    ]
+  },
+  {
+    "id": 3,
+    "order_index": 3,
+    "title": "Método bola de neve",
+    "subtitle": "Quite dívidas mais rápido",
+    "xp": 30,
+    "theme": "divida",
+    "content": "3 dívidas: R$ 300, R$ 1.200 e R$ 4.000. Pague o mínimo em todas e jogue tudo extra na menor. Quando quitar, use o valor livre pra próxima. Vitórias rápidas = motivação.",
+    "highlight": { "number": "3 dívidas → 0", "label": "Pague a menor primeiro, use o valor pra próxima." },
+    "questions": [
+      { "q": "No bola de neve, qual pagar primeiro?", "opts": ["Maior valor", "Menor valor", "Mais antiga"], "correct": 1, "explain": "Menor = quitada rápido = motivação!" },
+      { "q": "Quitou a de R$ 300. E agora?", "opts": ["Guardar na poupança", "Comemorar gastando", "Somar na próxima dívida"], "correct": 2, "explain": "Soma ao pagamento da próxima. A bola cresce." },
+      { "q": "Por que bola de neve > avalanche?", "opts": ["Economiza mais juros", "Vitórias rápidas motivam", "Bancos dão desconto"], "correct": 1, "explain": "Matematicamente o avalanche é melhor, mas a maioria desiste." }
+    ]
+  },
+  {
+    "id": 4,
+    "order_index": 4,
+    "title": "Pra onde vai seu dinheiro",
+    "subtitle": "Encontre gastos invisíveis",
+    "xp": 30,
+    "theme": "gastos",
+    "content": "R$ 15 no café, R$ 25 no delivery, R$ 12 no app. Parecem nada, somam R$ 500+/mês. Anote tudo por 1 semana e descubra pelo menos R$ 200/mês em gastos que nem sabia.",
+    "highlight": { "number": "R$ 200+/mês", "label": "em gastos invisíveis que a maioria descobre." },
+    "questions": [
+      { "q": "Melhor forma de saber pra onde vai o dinheiro?", "opts": ["Extrato no fim do mês", "Anotar cada gasto por 1 semana", "Lembrar de cabeça"], "correct": 1, "explain": "Anotar em tempo real é muito mais preciso." },
+      { "q": "Por que gastos pequenos são perigosos?", "opts": ["Banco cobra taxa", "Somam muito no mês", "São desnecessários"], "correct": 1, "explain": "R$ 15 aqui, R$ 25 ali = R$ 500+/mês." },
+      { "q": "Quanto se descobre em gastos invisíveis?", "opts": ["Menos de R$ 50", "Mais de R$ 200", "Nada"], "correct": 1, "explain": "R$ 200+ por mês! Dinheiro que pode ir pra meta." }
+    ]
+  },
+  {
+    "id": 5,
+    "order_index": 5,
+    "title": "A regra 50-30-20",
+    "subtitle": "A regra de ouro",
+    "xp": 30,
+    "theme": "gastos",
+    "content": "50% necessidades (aluguel, luz, mercado). 30% desejos (delivery, streaming). 20% futuro (dívidas, reserva). Ganha R$ 3.000? = R$ 1.500 + R$ 900 + R$ 600. Não consegue 20%? Comece com 5%.",
+    "highlight": { "number": "50 | 30 | 20", "label": "Necessidades | Desejos | Futuro" },
+    "questions": [
+      { "q": "Na regra 50-30-20, necessidades =", "opts": ["20%", "30%", "50%"], "correct": 2, "explain": "Metade da renda vai pra essenciais." },
+      { "q": "Delivery e streaming são:", "opts": ["Necessidades (50%)", "Desejos (30%)", "Futuro (20%)"], "correct": 1, "explain": "Coisas que quer, mas poderia viver sem." },
+      { "q": "Não consigo 20%. O que fazer?", "opts": ["Desistir", "Começar com 5% ou 10%", "Esperar ganhar mais"], "correct": 1, "explain": "Qualquer valor > zero. O hábito importa mais." }
+    ]
+  }
+]
