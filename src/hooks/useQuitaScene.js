@@ -24,7 +24,8 @@ export function useQuitaScene(xp, level, isExpanded = false) {
         position: fixed;
         top: 0; left: ${left}px;
         width: ${maxW}px; height: ${window.innerHeight}px;
-        z-index: 300; pointer-events: none;
+        z-index: 300; pointer-events: auto;
+        cursor: grab;
         display: block;
       `
       sceneRef.current?.resizeTo(maxW, window.innerHeight)
@@ -49,9 +50,10 @@ export function useQuitaScene(xp, level, isExpanded = false) {
         left: ${rootLeft + 16}px;
         width: ${maxW - 32}px;
         height: ${rect.height}px;
-        z-index: 2; pointer-events: none;
+        z-index: 2; pointer-events: auto;
         display: block;
         border-radius: 12px;
+        cursor: grab;
       `
       sceneRef.current?.resizeTo(maxW - 32, rect.height)
     }
