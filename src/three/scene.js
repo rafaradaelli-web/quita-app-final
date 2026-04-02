@@ -23,7 +23,7 @@ export function initScene(canvas) {
   renderer.shadowMap.enabled = true
   renderer.shadowMap.type = THREE.PCFSoftShadowMap
   renderer.toneMapping = THREE.ACESFilmicToneMapping
-  renderer.toneMappingExposure = 1.1
+  renderer.toneMappingExposure = 1.35
   renderer.setSize(canvas.clientWidth || 400, canvas.clientHeight || 300, false)
 
   // ── Cena e câmera ─────────────────────────────────────────────────────────
@@ -34,7 +34,7 @@ export function initScene(canvas) {
     0.1, 100
   )
   // Levemente de baixo → dá peso e importância ao personagem
-  camera.position.set(0, 0.6, 5.8)
+  camera.position.set(0, 1.2, 5.8)
   camera.lookAt(0, 1.2, 0)
 
   // ── OrbitControls — rotação horizontal apenas ──────────────────────────────
@@ -53,10 +53,10 @@ export function initScene(canvas) {
 
   // ── Iluminação sóbria ──────────────────────────────────────────────────────
   // Ambiente suave — base sem sombras duras
-  scene.add(new THREE.AmbientLight(0xfff4fb, 0.40))
+  scene.add(new THREE.AmbientLight(0xfff4fb, 1.00))
 
   // Luz direcional suave vinda de cima-frente
-  const key = new THREE.DirectionalLight(0xffffff, 1.10)
+  const key = new THREE.DirectionalLight(0xffffff, 1.60)
   key.position.set(0.5, 6, 4)
   key.castShadow = true
   key.shadow.mapSize.width  = 1024
@@ -65,16 +65,16 @@ export function initScene(canvas) {
   key.shadow.camera.far     = 18
   key.shadow.camera.left = key.shadow.camera.bottom = -2.5
   key.shadow.camera.right = key.shadow.camera.top   =  2.5
-  key.shadow.bias = -0.001
+  key.shadow.bias = -0.003
   scene.add(key)
 
   // Fill de preenchimento leve — evita sombras duras nas laterais
-  const fill = new THREE.DirectionalLight(0xDDD6FE, 0.40)
+  const fill = new THREE.DirectionalLight(0xDDD6FE, 0.65)
   fill.position.set(-3, 2, 1)
   scene.add(fill)
 
   // Rim posterior rosado — contorno vinil sutil
-  const rim = new THREE.DirectionalLight(0xFFC0CB, 0.35)
+  const rim = new THREE.DirectionalLight(0xFFC0CB, 0.50)
   rim.position.set(0, -0.5, -4)
   scene.add(rim)
 
@@ -82,7 +82,7 @@ export function initScene(canvas) {
   const platform = new THREE.Group()
 
   const disk = new THREE.Mesh(
-    new THREE.CylinderGeometry(1.8, 1.6, 0.18, 48),
+    new THREE.CylinderGeometry(1.9, 1.9, 0.28, 48),
     new THREE.MeshStandardMaterial({ color: 0x5B21B6, roughness: 0.70, metalness: 0.10 })
   )
   disk.receiveShadow = true
@@ -91,7 +91,7 @@ export function initScene(canvas) {
 
   // Anel emissivo na borda
   const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(1.78, 0.042, 8, 48),
+    new THREE.TorusGeometry(1.90, 0.040, 8, 48),
     new THREE.MeshStandardMaterial({
       color: 0x8B5CF6, roughness: 0.35, metalness: 0.25,
       emissive: 0x4C1D95, emissiveIntensity: 0.45,
@@ -263,7 +263,7 @@ export function initScene(canvas) {
           child.material = child.material.clone()
           child.material.roughness          = 0.75  // fosco — vinil industrial
           child.material.metalness          = 0.0
-          child.material.envMapIntensity    = 0.6
+          child.material.envMapIntensity    = 0.0
           child.material.needsUpdate        = true
         }
 
@@ -285,8 +285,8 @@ export function initScene(canvas) {
   )
 
   // ── Câmera targets ─────────────────────────────────────────────────────────
-  const CAM_NORMAL = { x: 0, y: 0.6, z: 5.8, lookY: 1.2 }
-  const CAM_FOCUS  = { x: 0, y: 1.0, z: 8.0, lookY: 1.4 }
+  const CAM_NORMAL = { x: 0, y: 1.2, z: 5.8, lookY: 1.2 }
+  const CAM_FOCUS  = { x: 0, y: 1.2, z: 8.0, lookY: 1.2 }
   let camTarget = { ...CAM_NORMAL }
   let focusMode = false
 
