@@ -34,8 +34,8 @@ export function initScene(canvas) {
     0.1, 100
   )
   // Levemente de baixo → dá peso e importância ao personagem
-  camera.position.set(0, 1.5, 6.2)
-  camera.lookAt(0, 1.0, 0)
+  camera.position.set(0, 0.5, 6.2)
+  camera.lookAt(0, 0.2, 0)
 
   // ── OrbitControls — rotação horizontal apenas ──────────────────────────────
   const controls = new OrbitControls(camera, canvas)
@@ -48,7 +48,7 @@ export function initScene(canvas) {
   controls.minPolarAngle    = Math.PI / 2
   controls.maxPolarAngle    = Math.PI / 2
   // Target: centro do personagem
-  controls.target.set(0, 1.0, 0)
+  controls.target.set(0, 0.2, 0)
   controls.update()
 
   // ── Iluminação sóbria ──────────────────────────────────────────────────────
@@ -102,7 +102,7 @@ export function initScene(canvas) {
   shadow.position.y  = -0.16
   platform.add(shadow)
 
-  platform.position.set(0, 0.14, 0)
+  platform.position.set(0, -0.94, 0)
   scene.add(platform)
 
   // Partículas sutis de brilho ao redor
@@ -130,7 +130,7 @@ export function initScene(canvas) {
   })
   const glowRing = new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.06, 8, 32), glowMat)
   glowRing.rotation.x = Math.PI / 2
-  glowRing.position.y = 0.16
+  glowRing.position.y = -0.82
   scene.add(glowRing)
 
   // ── Estado de animação ─────────────────────────────────────────────────────
@@ -243,7 +243,7 @@ export function initScene(canvas) {
       quitaModel.userData.baseScale = scaleF
 
       // Base na plataforma
-      quitaModel.position.y -= (size.y * scaleF) / 2 - 1.38
+      quitaModel.position.y -= (size.y * scaleF) / 2 - 0.30
 
       // Material vinil fosco: roughness 0.75, metalness 0
       quitaModel.traverse(child => {
@@ -277,8 +277,8 @@ export function initScene(canvas) {
   )
 
   // ── Câmera targets ─────────────────────────────────────────────────────────
-  const CAM_NORMAL = { x: 0, y: 1.5, z: 6.2, lookY: 1.0 }
-  const CAM_FOCUS  = { x: 0, y: 1.5, z: 8.5, lookY: 1.0 }
+  const CAM_NORMAL = { x: 0, y: 0.5, z: 6.2, lookY: 0.2 }
+  const CAM_FOCUS  = { x: 0, y: 0.5, z: 8.5, lookY: 0.2 }
   let camTarget = { ...CAM_NORMAL }
   let focusMode = false
 
@@ -323,7 +323,7 @@ export function initScene(canvas) {
       // ── Animação idle base ──
       if (!isNodding) {
         // Flutuação vertical suave
-        quitaModel.position.y = 1.38 + Math.sin(t * 1.28) * 0.030
+        quitaModel.position.y = 0.30 + Math.sin(t * 1.28) * 0.030
         // Respiração (X e Z)
         const breathe = 1 + Math.sin(t * 1.75) * 0.010
         quitaModel.scale.x = bs * breathe
