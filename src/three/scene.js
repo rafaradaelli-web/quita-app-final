@@ -83,21 +83,13 @@ export function initScene(canvas) {
 
   const disk = new THREE.Mesh(
     new THREE.CylinderGeometry(1.9, 1.9, 0.28, 48),
-    new THREE.MeshStandardMaterial({ color: 0x5B21B6, roughness: 0.70, metalness: 0.10 })
+    new THREE.MeshStandardMaterial({ color: 0x5B21B6, roughness: 0.65, metalness: 0.10, emissive: 0x3B1094, emissiveIntensity: 0.20 })
   )
   disk.receiveShadow = true
   disk.position.y = -0.09
   platform.add(disk)
 
-  // Anel emissivo na borda
-  const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(1.90, 0.040, 8, 48),
-    new THREE.MeshStandardMaterial({
-      color: 0x8B5CF6, roughness: 0.35, metalness: 0.25,
-      emissive: 0x4C1D95, emissiveIntensity: 0.45,
-    })
-  )
-  platform.add(ring)
+  // Sem anel — palco limpo
 
   // Sombra projetada sob a plataforma
   const shadow = new THREE.Mesh(
@@ -386,7 +378,7 @@ export function initScene(canvas) {
     stars.rotation.y = t * 0.07
 
     // Anel emissivo pulsa
-    ring.material.emissiveIntensity = 0.32 + Math.sin(t * 1.4) * 0.13
+
 
     // Celebração
     if (celebrating) {
