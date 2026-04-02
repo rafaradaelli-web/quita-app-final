@@ -1,21 +1,26 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 import { initScene } from '../three/scene'
 
 export function useQuitaScene(xp, level, isExpanded = false) {
   const sceneRef = useRef(null)
   const cardRef  = useRef(null)
 
-  // Inicializa Three.js uma única vez — passa também o cardRef como eventElement
+  // Inicializa Three.js com o canvas fixo
+  // O OrbitControls vai usar o cardRef div quando disponível
   useEffect(() => {
     const canvas = document.getElementById('quita-canvas')
     if (!canvas || sceneRef.current) return
-    // cardRef.current pode não existir ainda — usar setTimeout para aguardar render
-    const init = () => {
-      sceneRef.current = initScene(canvas, cardRef.current)
+    // Inicializa sem eventElement — vamos conectar o cardRef depois
+    sceneRef.current = initScene(canvas, null)
+  }, [])
+
+  // Assim que o cardRef montar, conectar ao OrbitControls
+  const setCardRef = useCallback((node) => {
+    cardRef.current = node
+    if (node && sceneRef.current) {
+      // Atualizar o elemento de eventos do OrbitControls para o div do card
+      sceneRef.current?.setEventElement?.(node)
     }
-    // Pequeno delay para garantir que o cardRef está montado
-    const t = setTimeout(init, 100)
-    return () => clearTimeout(t)
   }, [])
 
   // Posiciona o canvas sobre o cardRef ou em fullscreen
@@ -38,7 +43,7 @@ export function useQuitaScene(xp, level, isExpanded = false) {
       return () => document.body.classList.remove('focus-mode')
     }
 
-    // Modo normal — posicionar sobre o card, sem bloquear eventos
+    // Modo normal — posicionar sobre o card, sem bloquear eventos UI
     const syncPosition = () => {
       const card = cardRef.current
       if (!card) { canvas.style.display = 'none'; return }
@@ -85,5 +90,5 @@ export function useQuitaScene(xp, level, isExpanded = false) {
   }, [])
 
   const celebrate = (count) => sceneRef.current?.onLessonComplete(count)
-  return { celebrate, cardRef }
+  return { celebrate, cardRef: setCardRef }
 }

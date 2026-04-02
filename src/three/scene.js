@@ -437,6 +437,28 @@ export function initScene(canvas, eventElement) {
 
   return {
     ...api,
+    // Conectar OrbitControls a um elemento DOM externo (ex: div container)
+    // Permite canvas com pointer-events:none mas rotação funcionando no div
+    setEventElement(el) {
+      if (!el || controls.domElement === el) return
+      // Remover listeners do canvas
+      controls.dispose()
+      // Reinicializar controls com o novo elemento
+      controls.connect(el)
+      // Garantir que zoom continua desabilitado
+      controls.enableZoom = false
+      controls.mouseButtons = {
+        LEFT:   THREE.MOUSE.ROTATE,
+        MIDDLE: THREE.MOUSE.NONE,
+        RIGHT:  THREE.MOUSE.NONE,
+      }
+      controls.touches = {
+        ONE: THREE.TOUCH.ROTATE,
+        TWO: THREE.TOUCH.NONE,
+      }
+      // Prevenir zoom via scroll no novo elemento
+      el.addEventListener('wheel', (e) => e.preventDefault(), { passive: false })
+    },
     dispose() {
       canvas.removeEventListener('pointerdown',   onPointerDown)
       canvas.removeEventListener('touchstart',    onPointerDown)
