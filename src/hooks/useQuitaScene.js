@@ -1,29 +1,18 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef } from 'react'
 import { initScene } from '../three/scene'
 
 export function useQuitaScene(xp, level, isExpanded = false) {
   const sceneRef = useRef(null)
   const cardRef  = useRef(null)
 
-  // Inicializa Three.js com o canvas fixo
-  // O OrbitControls vai usar o cardRef div quando disponível
+  // Inicializa Three.js uma única vez
   useEffect(() => {
     const canvas = document.getElementById('quita-canvas')
     if (!canvas || sceneRef.current) return
-    // Inicializa sem eventElement — vamos conectar o cardRef depois
-    sceneRef.current = initScene(canvas, null)
+    sceneRef.current = initScene(canvas)
   }, [])
 
-  // Assim que o cardRef montar, conectar ao OrbitControls
-  const setCardRef = useCallback((node) => {
-    cardRef.current = node
-    if (node && sceneRef.current) {
-      // Atualizar o elemento de eventos do OrbitControls para o div do card
-      sceneRef.current?.setEventElement?.(node)
-    }
-  }, [])
-
-  // Posiciona o canvas sobre o cardRef ou em fullscreen
+  // Posiciona o canvas
   useEffect(() => {
     const canvas = document.getElementById('quita-canvas')
     if (!canvas) return
@@ -35,15 +24,14 @@ export function useQuitaScene(xp, level, isExpanded = false) {
         position: fixed;
         top: 0; left: ${left}px;
         width: ${maxW}px; height: ${window.innerHeight}px;
-        z-index: 300; pointer-events: none;
-        display: block;
+        z-index: 2; pointer-events: auto;
+        display: block; cursor: grab;
       `
       sceneRef.current?.resizeTo(maxW, window.innerHeight)
       document.body.classList.add('focus-mode')
       return () => document.body.classList.remove('focus-mode')
     }
 
-    // Modo normal — posicionar sobre o card, sem bloquear eventos UI
     const syncPosition = () => {
       const card = cardRef.current
       if (!card) { canvas.style.display = 'none'; return }
@@ -56,9 +44,9 @@ export function useQuitaScene(xp, level, isExpanded = false) {
         left: ${rootLeft + 16}px;
         width: ${maxW - 32}px;
         height: ${rect.height}px;
-        z-index: 2; pointer-events: none;
-        display: block;
-        border-radius: 12px;
+        z-index: 2; pointer-events: auto;
+        display: block; border-radius: 12px;
+        cursor: grab;
       `
       sceneRef.current?.resizeTo(maxW - 32, rect.height)
     }
@@ -90,5 +78,5 @@ export function useQuitaScene(xp, level, isExpanded = false) {
   }, [])
 
   const celebrate = (count) => sceneRef.current?.onLessonComplete(count)
-  return { celebrate, cardRef: setCardRef }
+  return { celebrate, cardRef }
 }

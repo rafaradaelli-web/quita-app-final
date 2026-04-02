@@ -514,10 +514,11 @@ const [state, setState] = useState(DEFAULT_STATE);
 
               {/* Botão expandir */}
               <button onClick={() => setIsExpanded(e => !e)}
-                style={{ position: "absolute", top: 10, right: 10, zIndex: 10,
+                style={{ position: "absolute", top: 10, right: 10, zIndex: 50,
                   width: 32, height: 32, borderRadius: "50%",
                   background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.25)",
-                  cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                  pointerEvents: "all" }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round">
                   {isExpanded
                     ? <><path d="M8 3v3a2 2 0 01-2 2H3"/><path d="M21 8h-3a2 2 0 01-2-2V3"/><path d="M3 16h3a2 2 0 012 2v3"/><path d="M16 21v-3a2 2 0 012-2h3"/></>
