@@ -44,6 +44,16 @@ export function initScene(canvas) {
   controls.enableZoom       = false      // sem zoom
   controls.enablePan        = false      // sem pan
   controls.autoRotate       = false      // sem auto-rotação
+  // Travar zoom no mouse e no touch (pinça)
+  controls.mouseButtons = {
+    LEFT:   THREE.MOUSE.ROTATE,
+    MIDDLE: THREE.MOUSE.NONE,
+    RIGHT:  THREE.MOUSE.NONE,
+  }
+  controls.touches = {
+    ONE:  THREE.TOUCH.ROTATE,
+    TWO:  THREE.TOUCH.NONE,    // desativa pinça de zoom
+  }
   // Travar eixo vertical: Math.PI/2 = 1.5708 rad = olhar reto para frente
   controls.minPolarAngle    = Math.PI / 2
   controls.maxPolarAngle    = Math.PI / 2
@@ -295,7 +305,7 @@ export function initScene(canvas) {
       focusMode  = on
       camTarget  = on ? { ...CAM_FOCUS } : { ...CAM_NORMAL }
       // Em modo foco habilitar zoom suave
-      controls.enableZoom = on
+      controls.enableZoom = false  // zoom sempre desabilitado
     },
     resizeTo(w, h) {
       if (!w || !h) return
