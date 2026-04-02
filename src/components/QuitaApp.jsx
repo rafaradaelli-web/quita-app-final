@@ -527,12 +527,7 @@ const [state, setState] = useState(DEFAULT_STATE);
               </button>
             </div>
 
-            {/* Dica de interação */}
-            <div style={{ textAlign: "center", padding: "6px 0 2px", opacity: 0.45 }}>
-              <span style={{ fontSize: 10, color: "#EDE9FE", fontWeight: 500, letterSpacing: 0.5 }}>
-                ↔ ARRASTE · TOQUE PARA ANIMAR
-              </span>
-            </div>
+
             {/* Rodapé do card com botão de ação */}
             <div style={{ padding: "8px 16px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div>
