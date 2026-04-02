@@ -23,7 +23,7 @@ export function initScene(canvas) {
   renderer.shadowMap.enabled = true
   renderer.shadowMap.type = THREE.PCFSoftShadowMap
   renderer.toneMapping = THREE.ACESFilmicToneMapping
-  renderer.toneMappingExposure = 1.35
+  renderer.toneMappingExposure = 1.05
   renderer.setSize(canvas.clientWidth || 400, canvas.clientHeight || 300, false)
 
   // ── Cena e câmera ─────────────────────────────────────────────────────────
@@ -34,8 +34,8 @@ export function initScene(canvas) {
     0.1, 100
   )
   // Levemente de baixo → dá peso e importância ao personagem
-  camera.position.set(0, 1.2, 5.8)
-  camera.lookAt(0, 1.2, 0)
+  camera.position.set(0, 1.5, 6.2)
+  camera.lookAt(0, 1.0, 0)
 
   // ── OrbitControls — rotação horizontal apenas ──────────────────────────────
   const controls = new OrbitControls(camera, canvas)
@@ -48,15 +48,15 @@ export function initScene(canvas) {
   controls.minPolarAngle    = Math.PI / 2
   controls.maxPolarAngle    = Math.PI / 2
   // Target: centro do personagem
-  controls.target.set(0, 1.2, 0)
+  controls.target.set(0, 1.0, 0)
   controls.update()
 
   // ── Iluminação sóbria ──────────────────────────────────────────────────────
   // Ambiente suave — base sem sombras duras
-  scene.add(new THREE.AmbientLight(0xfff4fb, 1.00))
+  scene.add(new THREE.AmbientLight(0xfff4fb, 0.80))
 
   // Luz direcional suave vinda de cima-frente
-  const key = new THREE.DirectionalLight(0xffffff, 1.60)
+  const key = new THREE.DirectionalLight(0xffffff, 1.20)
   key.position.set(0.5, 6, 4)
   key.castShadow = true
   key.shadow.mapSize.width  = 1024
@@ -69,12 +69,12 @@ export function initScene(canvas) {
   scene.add(key)
 
   // Fill de preenchimento leve — evita sombras duras nas laterais
-  const fill = new THREE.DirectionalLight(0xDDD6FE, 0.65)
+  const fill = new THREE.DirectionalLight(0xEDE9FE, 0.45)
   fill.position.set(-3, 2, 1)
   scene.add(fill)
 
   // Rim posterior rosado — contorno vinil sutil
-  const rim = new THREE.DirectionalLight(0xFFC0CB, 0.50)
+  const rim = new THREE.DirectionalLight(0xFFC0CB, 0.30)
   rim.position.set(0, -0.5, -4)
   scene.add(rim)
 
@@ -107,10 +107,10 @@ export function initScene(canvas) {
     })
   )
   shadow.rotation.x = -Math.PI / 2
-  shadow.position.y  = -0.20
+  shadow.position.y  = -0.16
   platform.add(shadow)
 
-  platform.position.set(0, -1.55, 0)
+  platform.position.set(0, 0.14, 0)
   scene.add(platform)
 
   // Partículas sutis de brilho ao redor
@@ -138,7 +138,7 @@ export function initScene(canvas) {
   })
   const glowRing = new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.06, 8, 32), glowMat)
   glowRing.rotation.x = Math.PI / 2
-  glowRing.position.y = -1.44
+  glowRing.position.y = 0.16
   scene.add(glowRing)
 
   // ── Estado de animação ─────────────────────────────────────────────────────
@@ -285,8 +285,8 @@ export function initScene(canvas) {
   )
 
   // ── Câmera targets ─────────────────────────────────────────────────────────
-  const CAM_NORMAL = { x: 0, y: 1.2, z: 5.8, lookY: 1.2 }
-  const CAM_FOCUS  = { x: 0, y: 1.2, z: 8.0, lookY: 1.2 }
+  const CAM_NORMAL = { x: 0, y: 1.5, z: 6.2, lookY: 1.0 }
+  const CAM_FOCUS  = { x: 0, y: 1.5, z: 8.5, lookY: 1.0 }
   let camTarget = { ...CAM_NORMAL }
   let focusMode = false
 
@@ -331,7 +331,7 @@ export function initScene(canvas) {
       // ── Animação idle base ──
       if (!isNodding) {
         // Flutuação vertical suave
-        quitaModel.position.y = 1.38 + Math.sin(t * 1.28) * 0.045
+        quitaModel.position.y = 1.38 + Math.sin(t * 1.28) * 0.030
         // Respiração (X e Z)
         const breathe = 1 + Math.sin(t * 1.75) * 0.010
         quitaModel.scale.x = bs * breathe
