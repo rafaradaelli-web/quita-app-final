@@ -11,7 +11,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 // • Plataforma circular minimalista
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function initScene(canvas) {
+export function initScene(canvas, eventElement) {
   const isMobile = /Mobi|Android/i.test(navigator.userAgent)
   const PR = Math.min(window.devicePixelRatio || 1, isMobile ? 1.5 : 2)
 
@@ -38,7 +38,9 @@ export function initScene(canvas) {
   camera.lookAt(0, 0.2, 0)
 
   // ── OrbitControls — rotação horizontal apenas ──────────────────────────────
-  const controls = new OrbitControls(camera, canvas)
+  // Usar eventElement para eventos (div container) se disponível
+  // Isso permite canvas com pointer-events:none mas OrbitControls funcional
+  const controls = new OrbitControls(camera, eventElement || canvas)
   controls.enableDamping    = true
   controls.dampingFactor    = 0.10
   controls.enableZoom       = false      // sem zoom
@@ -421,16 +423,28 @@ export function initScene(canvas) {
   }
   window.addEventListener('resize', onResize)
 
+  // Impedir zoom do browser via scroll/pinça no canvas
+  const onWheel = (e) => e.preventDefault()
+  canvas.addEventListener('wheel', onWheel, { passive: false })
+
+  // Impedir zoom via gesture no iOS/Safari
+  const onGesture = (e) => e.preventDefault()
+  canvas.addEventListener('gesturestart', onGesture, { passive: false })
+  canvas.addEventListener('gesturechange', onGesture, { passive: false })
+
   animate()
   console.log('[Quita3D] v5 — OrbitControls + Idle Blink + Raycast Nod')
 
   return {
     ...api,
     dispose() {
-      canvas.removeEventListener('pointerdown', onPointerDown)
-      canvas.removeEventListener('touchstart',  onPointerDown)
-      canvas.removeEventListener('pointerup',   onPointerUp)
-      canvas.removeEventListener('touchend',    onPointerUp)
+      canvas.removeEventListener('pointerdown',   onPointerDown)
+      canvas.removeEventListener('touchstart',    onPointerDown)
+      canvas.removeEventListener('pointerup',     onPointerUp)
+      canvas.removeEventListener('touchend',      onPointerUp)
+      canvas.removeEventListener('wheel',         onWheel)
+      canvas.removeEventListener('gesturestart',  onGesture)
+      canvas.removeEventListener('gesturechange', onGesture)
       controls.dispose()
       window.removeEventListener('resize', onResize)
       renderer.dispose()
