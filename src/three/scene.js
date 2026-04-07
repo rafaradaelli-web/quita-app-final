@@ -11,12 +11,14 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 // • Plataforma circular minimalista
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function initScene(canvas, eventElement) {
+export function initScene(_canvas, eventElement, modelPath) {
+  let canvas = _canvas
+  const initialModel = modelPath || '/models/quita-real.glb'
   const isMobile = /Mobi|Android/i.test(navigator.userAgent)
   const PR = Math.min(window.devicePixelRatio || 1, isMobile ? 1.5 : 2)
 
   // ── Renderer ──────────────────────────────────────────────────────────────
-  const renderer = new THREE.WebGLRenderer({
+  let renderer = new THREE.WebGLRenderer({
     canvas, alpha: true, antialias: !isMobile, powerPreference: 'low-power',
   })
   renderer.setPixelRatio(PR)
@@ -40,7 +42,7 @@ export function initScene(canvas, eventElement) {
   // ── OrbitControls — rotação horizontal apenas ──────────────────────────────
   // Usar eventElement para eventos (div container) se disponível
   // Isso permite canvas com pointer-events:none mas OrbitControls funcional
-  const controls = new OrbitControls(camera, eventElement || canvas)
+  let controls = new OrbitControls(camera, eventElement || canvas)
   controls.enableDamping    = true
   controls.dampingFactor    = 0.10
   controls.enableZoom       = false      // sem zoom
@@ -213,10 +215,8 @@ export function initScene(canvas, eventElement) {
     raycaster.setFromCamera(ndc, camera)
     const hits = raycaster.intersectObject(quitaModel, true)
 
-    if (hits.length > 0 && !isNodding) {
-      // Clicou na Quita → aceno + som
-      isNodding = true
-      nodPhase  = 0
+    if (hits.length > 0) {
+      // Clicou na Quita → som
       playCoinSound()
     }
   }
@@ -234,59 +234,8 @@ export function initScene(canvas, eventElement) {
   controls.addEventListener('start', () => { userActive = true; idleTimer = 0 })
   controls.addEventListener('end',   () => { userActive = false })
 
-  // ── Carregar modelo GLB ────────────────────────────────────────────────────
-  const loader = new GLTFLoader()
-  loader.load(
-    '/models/quita-real.glb',
-    (gltf) => {
-      quitaModel = gltf.scene
-
-      // Centralizar e escalar
-      const box    = new THREE.Box3().setFromObject(quitaModel)
-      const size   = new THREE.Vector3()
-      const center = new THREE.Vector3()
-      box.getSize(size)
-      box.getCenter(center)
-
-      quitaModel.position.sub(center)
-
-      const scaleF = 2.2 / size.y
-      quitaModel.scale.setScalar(scaleF)
-      quitaModel.userData.baseScale = scaleF
-
-      // Base na plataforma
-      quitaModel.position.y -= (size.y * scaleF) / 2 - 0.30
-
-      // Material vinil fosco: roughness 0.75, metalness 0
-      quitaModel.traverse(child => {
-        if (!child.isMesh) return
-        child.castShadow    = true
-        child.receiveShadow = true
-
-        if (child.material) {
-          child.material = child.material.clone()
-          child.material.roughness          = 0.75  // fosco — vinil industrial
-          child.material.metalness          = 0.0
-          child.material.envMapIntensity    = 0.0
-          child.material.needsUpdate        = true
-        }
-
-        // Tentar identificar a cabeça pelo nome do nó
-        const name = (child.name || '').toLowerCase()
-        if (!headNode && (name.includes('head') || name.includes('cab') || name.includes('topo'))) {
-          headNode = child.parent || child
-        }
-      })
-
-      // Fallback: usar o próprio modelo como headNode (acena o corpo todo)
-      if (!headNode) headNode = quitaModel
-
-      scene.add(quitaModel)
-      console.log('[Quita3D] GLB carregado ✅ | headNode:', headNode?.name || 'root')
-    },
-    null,
-    (err) => console.error('[Quita3D] Erro GLB:', err)
-  )
+  // ── Modelo será carregado via api.loadModel() ──
+  // Não carrega automaticamente — o hook controla
 
   // ── Câmera targets ─────────────────────────────────────────────────────────
   const CAM_NORMAL = { x: 0, y: 0.5, z: 6.2, lookY: 0.2 }
@@ -306,14 +255,66 @@ export function initScene(canvas, eventElement) {
     setFocusMode(on) {
       focusMode  = on
       camTarget  = on ? { ...CAM_FOCUS } : { ...CAM_NORMAL }
-      // Em modo foco habilitar zoom suave
-      controls.enableZoom = false  // zoom sempre desabilitado
+      controls.enableZoom = false
     },
     resizeTo(w, h) {
       if (!w || !h) return
       camera.aspect = w / h
       camera.updateProjectionMatrix()
       renderer.setSize(w, h, false)
+    },
+    loadModel(path) {
+      // Remove ALL existing models from scene (prevents overlap)
+      scene.children.forEach(child => {
+        if (child !== platform && child.type !== 'DirectionalLight' && child.type !== 'AmbientLight' && child.type !== 'HemisphereLight' && child.type !== 'SpotLight') {
+          // Keep lights and platform, remove everything else
+          if (child.isMesh || child.isGroup || child.isObject3D) {
+            if (child !== platform) scene.remove(child)
+          }
+        }
+      })
+      if (quitaModel) { scene.remove(quitaModel); quitaModel = null; headNode = null }
+      const ld = new GLTFLoader()
+      ld.load(path, (gltf) => {
+        // Remove again in case of race condition
+        if (quitaModel) { scene.remove(quitaModel) }
+        quitaModel = gltf.scene
+        headNode = null
+        const box = new THREE.Box3().setFromObject(quitaModel)
+        const size = new THREE.Vector3(), center = new THREE.Vector3()
+        box.getSize(size); box.getCenter(center)
+        quitaModel.position.sub(center)
+        const scaleF = 2.2 / size.y
+        quitaModel.scale.setScalar(scaleF)
+        quitaModel.userData.baseScale = scaleF
+        quitaModel.position.y -= (size.y * scaleF) / 2 - 0.30
+        quitaModel.traverse(child => {
+          if (!child.isMesh) return
+          child.castShadow = true; child.receiveShadow = true
+          if (child.material) { child.material = child.material.clone(); child.material.roughness = 0.75; child.material.metalness = 0.0; child.material.envMapIntensity = 0.0; child.material.needsUpdate = true }
+          const name = (child.name || '').toLowerCase()
+          if (!headNode && (name.includes('head') || name.includes('cab') || name.includes('topo'))) { headNode = child.parent || child }
+        })
+        if (!headNode) headNode = quitaModel
+        scene.add(quitaModel)
+        console.log('[Quita3D] Modelo trocado ✅', path)
+      }, null, (err) => console.error('[Quita3D] Erro ao trocar modelo:', err))
+    },
+    setBackground(bgId) {
+      // Remove existing background sphere if any
+      const oldBg = scene.getObjectByName('quitaBgSphere')
+      if (oldBg) scene.remove(oldBg)
+      // Update platform color to match background
+      const BG = {
+        padrao:     [0x5B21B6, 0x3B1094],
+        praia:      [0x0E7490, 0x065666],
+        gamer:      [0x2D1B69, 0x1A0A3E],
+        escritorio: [0x92400E, 0x451A03],
+        natal:      [0x1E3A5F, 0x0F172A],
+      }
+      const colors = BG[bgId] || BG.padrao
+      disk.material.color.setHex(colors[0])
+      disk.material.emissive.setHex(colors[1])
     },
   }
 
@@ -326,7 +327,6 @@ export function initScene(canvas, eventElement) {
     const delta = clock.getDelta()
     const t     = clock.getElapsedTime()
 
-    // Atualizar OrbitControls (necessário com damping)
     controls.update()
 
     if (quitaModel) {
@@ -403,15 +403,6 @@ export function initScene(canvas, eventElement) {
       else glowMat.opacity = 0
     }
 
-    // Tween câmera (desativado quando OrbitControls está ativo)
-    if (!userActive) {
-      const lerp = 0.038
-      camera.position.x += (camTarget.x - camera.position.x) * lerp
-      camera.position.y += (camTarget.y - camera.position.y) * lerp
-      camera.position.z += (camTarget.z - camera.position.z) * lerp
-      controls.target.y += (camTarget.lookY - controls.target.y) * lerp
-    }
-
     renderer.render(scene, camera)
   }
 
@@ -437,6 +428,57 @@ export function initScene(canvas, eventElement) {
 
   return {
     ...api,
+
+    reattach(newCanvas) {
+      // Limpar listeners do canvas antigo
+      canvas.removeEventListener('pointerdown',   onPointerDown)
+      canvas.removeEventListener('touchstart',    onPointerDown)
+      canvas.removeEventListener('pointerup',     onPointerUp)
+      canvas.removeEventListener('touchend',      onPointerUp)
+      canvas.removeEventListener('wheel',         onWheel)
+      canvas.removeEventListener('gesturestart',  onGesture)
+      canvas.removeEventListener('gesturechange', onGesture)
+      controls.dispose()
+      window.removeEventListener('resize', onResize)
+      renderer.dispose()
+
+      // Novo canvas
+      canvas = newCanvas
+      const newRenderer = new THREE.WebGLRenderer({
+        canvas: newCanvas, alpha: true, antialias: !isMobile, powerPreference: 'low-power',
+      })
+      newRenderer.setPixelRatio(PR)
+      newRenderer.shadowMap.enabled = true
+      newRenderer.shadowMap.type = THREE.PCFSoftShadowMap
+      newRenderer.toneMapping = THREE.ACESFilmicToneMapping
+      newRenderer.toneMappingExposure = 1.05
+      const w = newCanvas.clientWidth || 400, h = newCanvas.clientHeight || 300
+      newRenderer.setSize(w, h, false)
+      renderer = newRenderer
+
+      // Novos controls
+      const newControls = new OrbitControls(camera, newCanvas)
+      newControls.enableDamping = true; newControls.dampingFactor = 0.10
+      newControls.enableZoom = false; newControls.enablePan = false; newControls.autoRotate = false
+      newControls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.NONE, RIGHT: THREE.MOUSE.NONE }
+      newControls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.NONE }
+      newControls.minPolarAngle = Math.PI / 2; newControls.maxPolarAngle = Math.PI / 2
+      newControls.target.set(0, 0.2, 0); newControls.update()
+      controls = newControls
+
+      // Re-registrar listeners
+      newCanvas.addEventListener('pointerdown', onPointerDown)
+      newCanvas.addEventListener('touchstart', onPointerDown, { passive: true })
+      newCanvas.addEventListener('pointerup', onPointerUp)
+      newCanvas.addEventListener('touchend', onPointerUp, { passive: true })
+      newCanvas.addEventListener('wheel', onWheel, { passive: false })
+      newCanvas.addEventListener('gesturestart', onGesture, { passive: false })
+      newCanvas.addEventListener('gesturechange', onGesture, { passive: false })
+      window.addEventListener('resize', onResize)
+
+      camera.aspect = w / h
+      camera.updateProjectionMatrix()
+    },
 
     dispose() {
       canvas.removeEventListener('pointerdown',   onPointerDown)

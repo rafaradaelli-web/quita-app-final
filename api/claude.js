@@ -1,5 +1,44 @@
+// Rate limit: max requests per IP per hour
+const RATE_LIMIT = 30 // 30 chamadas por hora por usuário
+const WINDOW_MS = 60 * 60 * 1000 // 1 hora
+const requests = new Map() // IP -> { count, resetAt }
+
+function checkRateLimit(ip) {
+  const now = Date.now()
+  const record = requests.get(ip)
+  if (!record || now > record.resetAt) {
+    requests.set(ip, { count: 1, resetAt: now + WINDOW_MS })
+    return { allowed: true, remaining: RATE_LIMIT - 1 }
+  }
+  if (record.count >= RATE_LIMIT) {
+    return { allowed: false, remaining: 0, retryAfter: Math.ceil((record.resetAt - now) / 1000) }
+  }
+  record.count++
+  return { allowed: true, remaining: RATE_LIMIT - record.count }
+}
+
+// Limpar IPs antigos periodicamente (evita memory leak)
+setInterval(() => {
+  const now = Date.now()
+  for (const [ip, record] of requests) {
+    if (now > record.resetAt) requests.delete(ip)
+  }
+}, 10 * 60 * 1000) // limpa a cada 10 min
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+
+  // Rate limit
+  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown'
+  const limit = checkRateLimit(ip)
+  res.setHeader('X-RateLimit-Limit', RATE_LIMIT)
+  res.setHeader('X-RateLimit-Remaining', limit.remaining)
+  if (!limit.allowed) {
+    return res.status(429).json({
+      error: { message: `Limite de ${RATE_LIMIT} consultas por hora atingido. Tente novamente em ${limit.retryAfter} segundos.` }
+    })
+  }
+
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return res.status(500).json({ error: { message: "API key não configurada" } });
 

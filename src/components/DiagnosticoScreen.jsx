@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CAT_NORM, CAT_GRUPOS, CATEGORIES } from '../services/gameConfig'
+import { CAT_NORM, CAT_GRUPOS, CATEGORIES, fmtM, fmtDt, calcDebtSummary } from '../services/gameConfig'
 
 export default function DiagnosticoScreen({ state, styles, setScreen }) {
   var ph=styles.ph, card=styles.card, btn=styles.btn, input=styles.input, NavBar=styles.NavBar;
@@ -47,25 +47,25 @@ export default function DiagnosticoScreen({ state, styles, setScreen }) {
   var scoreBg = score>=75?"linear-gradient(135deg,#F0FDF4,#DCFCE7)":score>=50?"linear-gradient(135deg,#FFFBEB,#FEF3C7)":"linear-gradient(135deg,#FEF2F2,#FFE4E6)";
   var scoreLabel = score>=75?"Saudavel":score>=50?"Atencao":"Critico";
   var alertas=[], atencoes=[], oportunidades=[];
-  if (income===0) alertas.push({icon:"📊",title:"Cadastre suas receitas",desc:"Sem receitas cadastradas, nao e possivel calcular comprometimento, sobra mensal e gerar insights.",action:"Ver Receitas",screen:"receitas"});
-  if (comprometimentoDividas>40) alertas.push({icon:"🚨",title:"Parcelas acima do limite",desc:"Suas parcelas consomem "+Math.round(comprometimentoDividas)+"% da renda. Ideal e abaixo de 30%. Risco de inadimplencia.",action:null});
-  if (sobraMensal<0) alertas.push({icon:"🔴",title:"Saldo mensal negativo",desc:"Voce esta gastando R$ "+fmtM(Math.abs(sobraMensal))+" a mais do que ganha. Insustentavel a longo prazo.",action:null});
-  if (debts.some(function(d){ return d.type==="cartao"&&d.rate>10; })) alertas.push({icon:"💳",title:"Cartao rotativo ativo",desc:"O rotativo do cartao e a divida mais cara do Brasil — media de 15-20% ao mes. Prioridade maxima.",action:"Ver Dividas",screen:"debts"});
-  if (comprometimentoDividas>20&&comprometimentoDividas<=40) atencoes.push({icon:"🟡",title:"Comprometimento elevado",desc:Math.round(comprometimentoDividas)+"% da renda vai para parcelas. Monitore para nao ultrapassar 30%.",action:null});
-  if (variacaoGastos>15) atencoes.push({icon:"📈",title:"Gastos crescendo "+Math.round(variacaoGastos)+"%",desc:"Seus gastos subiram em relacao ao mes anterior. Verifique o que mudou.",action:"Ver Gastos",screen:"expenses"});
-  if (catsCrescendo.length>0) atencoes.push({icon:"👀",title:catsCrescendo[0].cat+" em alta",desc:"Gasto com "+catsCrescendo[0].cat+" subiu mais de 20% esse mes. Vale revisar.",action:"Ver Gastos",screen:"expenses"});
-  if (metaMaisProx&&!goals.some(function(g){ return g.saved>0; })) atencoes.push({icon:"🎯",title:"Metas sem progresso",desc:"Voce tem metas mas sem aportes. Comece com qualquer valor — o habito importa mais.",action:"Ver Metas",screen:"goals"});
+  if (income===0) alertas.push({icon:"M18 20V10M12 20V4M6 20v-6",iconColor:"#7C3AED",title:"Cadastre suas receitas",desc:"Sem receitas cadastradas, nao e possivel calcular comprometimento, sobra mensal e gerar insights.",action:"Ver Receitas",screen:"receitas"});
+  if (comprometimentoDividas>40) alertas.push({icon:"M7.86 2h8.28L22 7.86v8.28L16.14 22H7.86L2 16.14V7.86L7.86 2zM12 8v4M12 16h.01",iconColor:"#EF4444",title:"Parcelas acima do limite",desc:"Suas parcelas consomem "+Math.round(comprometimentoDividas)+"% da renda. Ideal e abaixo de 30%. Risco de inadimplencia.",action:null});
+  if (sobraMensal<0) alertas.push({icon:"M12 2a10 10 0 100 20 10 10 0 000-20zM12 8v4M12 16h.01",iconColor:"#EF4444",title:"Saldo mensal negativo",desc:"Voce esta gastando R$ "+fmtM(Math.abs(sobraMensal))+" a mais do que ganha. Insustentavel a longo prazo.",action:null});
+  if (debts.some(function(d){ return d.type==="cartao"&&d.rate>10; })) alertas.push({icon:"M1 4h22v16H1zM1 10h22",iconColor:"#EF4444",title:"Cartao rotativo ativo",desc:"O rotativo do cartao e a divida mais cara do Brasil — media de 15-20% ao mes. Prioridade maxima.",action:"Ver Dividas",screen:"debts"});
+  if (comprometimentoDividas>20&&comprometimentoDividas<=40) atencoes.push({icon:"M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01",iconColor:"#F59E0B",title:"Comprometimento elevado",desc:Math.round(comprometimentoDividas)+"% da renda vai para parcelas. Monitore para nao ultrapassar 30%.",action:null});
+  if (variacaoGastos>15) atencoes.push({icon:"M23 6l-9.5 9.5-5-5L1 18",iconColor:"#F59E0B",title:"Gastos crescendo "+Math.round(variacaoGastos)+"%",desc:"Seus gastos subiram em relacao ao mes anterior. Verifique o que mudou.",action:"Ver Gastos",screen:"expenses"});
+  if (catsCrescendo.length>0) atencoes.push({icon:"M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 9a3 3 0 100 6 3 3 0 000-6z",iconColor:"#3B82F6",title:catsCrescendo[0].cat+" em alta",desc:"Gasto com "+catsCrescendo[0].cat+" subiu mais de 20% esse mes. Vale revisar.",action:"Ver Gastos",screen:"expenses"});
+  if (metaMaisProx&&!goals.some(function(g){ return g.saved>0; })) atencoes.push({icon:"M12 2a10 10 0 100 20 10 10 0 000-20zM12 6a6 6 0 100 12 6 6 0 000-12zM12 10a2 2 0 100 4 2 2 0 000-4z",iconColor:"#7C3AED",title:"Metas sem progresso",desc:"Voce tem metas mas sem aportes. Comece com qualquer valor — o habito importa mais.",action:"Ver Metas",screen:"goals"});
   if (divMaisCaraExtra&&divMaisCaraSummary&&divMaisCaraExtra.mesesBase>divMaisCaraExtra.meses) {
     var mg=divMaisCaraSummary.meses-divMaisCaraExtra.meses;
-    oportunidades.push({icon:"⚡",title:"Quite "+mg+" meses mais rapido",desc:"Pagando R$ "+fmtM(extraIdeal)+" a mais no "+divMaisCara.name+", voce economiza R$ "+fmtM(divMaisCaraExtra.economia)+" em juros e quita "+mg+" meses antes.",action:"Ver Dividas",screen:"debts"});
+    oportunidades.push({icon:"M13 2L3 14h9l-1 8 10-12h-9l1-8z",iconColor:"#F59E0B",title:"Quite "+mg+" meses mais rapido",desc:"Pagando R$ "+fmtM(extraIdeal)+" a mais no "+divMaisCara.name+", voce economiza R$ "+fmtM(divMaisCaraExtra.economia)+" em juros e quita "+mg+" meses antes.",action:"Ver Dividas",screen:"debts"});
   }
   if (maiorCat&&income>0&&(maiorCat.val/income)>0.2) {
     var ep=maiorCat.val*0.3;
-    oportunidades.push({icon:"✂️",title:"Cortar "+maiorCat.cat+" libera R$ "+fmtM(ep)+"/mes",desc:"Reduzindo 30% no maior gasto, voce libera R$ "+fmtM(ep)+" por mes para dividas ou poupanca.",action:"Ver Gastos",screen:"expenses"});
+    oportunidades.push({icon:"M6 9a3 3 0 100-6 3 3 0 000 6zM6 21a3 3 0 100-6 3 3 0 000 6zM20 4L8.12 15.88M14.47 14.48L20 20M8.12 8.12L12 12",iconColor:"#22C55E",title:"Cortar "+maiorCat.cat+" libera R$ "+fmtM(ep)+"/mes",desc:"Reduzindo 30% no maior gasto, voce libera R$ "+fmtM(ep)+" por mes para dividas ou poupanca.",action:"Ver Gastos",screen:"expenses"});
   }
   if (sobraMensal>200&&metaMaisProx) {
     var mo=Math.ceil((metaMaisProx.target-metaMaisProx.saved)/sobraMensal);
-    oportunidades.push({icon:"🎉",title:"Meta '"+metaMaisProx.name+"' em "+mo+" "+(mo===1?"mes":"meses"),desc:"Com sua sobra de R$ "+fmtM(sobraMensal)+"/mes, voce atinge essa meta em "+mo+" "+(mo===1?"mes":"meses")+".",action:"Ver Metas",screen:"goals"});
+    oportunidades.push({icon:"M12 2a10 10 0 100 20 10 10 0 000-20zM8 14s1.5 2 4 2 4-2 4-2",iconColor:"#22C55E",title:"Meta '"+metaMaisProx.name+"' em "+mo+" "+(mo===1?"mes":"meses"),desc:"Com sua sobra de R$ "+fmtM(sobraMensal)+"/mes, voce atinge essa meta em "+mo+" "+(mo===1?"mes":"meses")+".",action:"Ver Metas",screen:"goals"});
   }
   function AlertCard({ items, color, bgCard, label }) {
     if (!items||items.length===0) return null;
@@ -75,7 +75,7 @@ export default function DiagnosticoScreen({ state, styles, setScreen }) {
         {items.map(function(a,i){ return (
           <div key={i} style={{background:bgCard,borderRadius:16,padding:16,marginBottom:8,boxShadow:"0 1px 6px rgba(0,0,0,0.05)"}}>
             <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
-              <span style={{fontSize:20,flexShrink:0,marginTop:1}}>{a.icon}</span>
+              <span style={{fontSize:20,flexShrink:0,marginTop:1}}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={a.iconColor||"#7C3AED"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={a.icon}/></svg></span>
               <div style={{flex:1}}>
                 <div style={{fontSize:14,fontWeight:700,color:"#333",marginBottom:4}}>{a.title}</div>
                 <div style={{fontSize:13,color:"#555",lineHeight:1.5}}>{a.desc}</div>
@@ -123,7 +123,7 @@ export default function DiagnosticoScreen({ state, styles, setScreen }) {
         </div>
         {income===0&&(
           <div style={{...card,textAlign:"center",padding:24,background:"linear-gradient(135deg,#FEF2F2,#FFE4E6)",border:"none"}}>
-            <div style={{fontSize:24,marginBottom:8}}>📊</div>
+            <div style={{width:48,height:48,borderRadius:14,background:"#EDE9FE",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:8}}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg></div>
             <div style={{fontSize:14,fontWeight:700,color:"#EF4444",marginBottom:6}}>Cadastre sua renda para ativar</div>
             <div style={{fontSize:13,color:"#666",marginBottom:14}}>Com a renda, consigo calcular comprometimento real, sobra mensal e gerar insights personalizados.</div>
             <button onClick={function(){ setScreen("profile"); }} style={{...btn,maxWidth:220,margin:"0 auto"}}>Cadastrar renda</button>
@@ -134,7 +134,7 @@ export default function DiagnosticoScreen({ state, styles, setScreen }) {
         <AlertCard items={oportunidades} color="#16A34A" bgCard="#fff" label="OPORTUNIDADES" />
         {alertas.length===0&&atencoes.length===0&&oportunidades.length===0&&income>0&&(
           <div style={{...card,textAlign:"center",padding:32}}>
-            <div style={{fontSize:36,marginBottom:12}}>🐷</div>
+            <img src="/models/quita-original-preview.png" alt="Quita" style={{width:64,height:64,objectFit:"contain",marginBottom:12}} />
             <div style={{fontSize:15,fontWeight:700,color:"#333",marginBottom:6}}>Tudo certo!</div>
             <div style={{fontSize:13,color:"#999"}}>Continue registrando seus dados para insights mais precisos.</div>
           </div>

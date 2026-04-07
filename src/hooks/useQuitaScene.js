@@ -1,82 +1,71 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 import { initScene } from '../three/scene'
 
-export function useQuitaScene(xp, level, isExpanded = false) {
-  const sceneRef = useRef(null)
-  const cardRef  = useRef(null)
+// Cena persistente — modelo carregado uma vez, nunca destruído
+let _api = null
+let _currentModel = null
+let _currentBg = null
 
-  // Inicializa Three.js uma única vez
-  useEffect(() => {
-    const canvas = document.getElementById('quita-canvas')
-    if (!canvas || sceneRef.current) return
-    sceneRef.current = initScene(canvas)
-  }, [])
+export function useQuitaScene(xp, level, isExpanded = false, modelPath, bgId) {
+  const cardRef = useRef(null)
 
-  // Posiciona o canvas
-  useEffect(() => {
-    const canvas = document.getElementById('quita-canvas')
-    if (!canvas) return
-
-    if (isExpanded) {
-      const maxW = Math.min(window.innerWidth, 430)
-      const left = Math.max(0, (window.innerWidth - maxW) / 2)
-      canvas.style.cssText = `
-        position: fixed;
-        top: 0; left: ${left}px;
-        width: ${maxW}px; height: ${window.innerHeight}px;
-        z-index: 2; pointer-events: auto;
-        display: block; cursor: grab;
-      `
-      sceneRef.current?.resizeTo(maxW, window.innerHeight)
-      document.body.classList.add('focus-mode')
-      return () => document.body.classList.remove('focus-mode')
-    }
-
-    const syncPosition = () => {
+  // Callback ref: quando canvas monta, conecta a cena
+  const setCanvasRef = useCallback((el) => {
+    if (el) {
+      if (!_api) {
+        // Primeira vez: criar cena completa
+        _api = initScene(el, null)
+        const path = modelPath || '/models/quita-real.glb'
+        _api.loadModel(path)
+        _currentModel = path
+        if (bgId) { _api.setBackground(bgId); _currentBg = bgId }
+      } else {
+        // Cena já existe: reconectar ao novo canvas (instantâneo)
+        _api.reattach(el)
+      }
+      // Ajustar tamanho
       const card = cardRef.current
-      if (!card) { canvas.style.display = 'none'; return }
-      const rect = card.getBoundingClientRect()
-      const maxW = Math.min(window.innerWidth, 430)
-      const rootLeft = Math.max(0, (window.innerWidth - maxW) / 2)
-      canvas.style.cssText = `
-        position: fixed;
-        top: ${rect.top}px;
-        left: ${rootLeft + 16}px;
-        width: ${maxW - 32}px;
-        height: ${rect.height}px;
-        z-index: 2; pointer-events: auto;
-        display: block; border-radius: 12px;
-        cursor: grab;
-      `
-      sceneRef.current?.resizeTo(maxW - 32, rect.height)
+      if (card) {
+        const w = card.offsetWidth, h = card.offsetHeight
+        if (w > 0 && h > 0) _api.resizeTo(w, h)
+      }
     }
+    // Quando canvas desmonta (el === null): não fazer nada
+    // A cena continua viva na memória pra reattach rápido
+  }, [modelPath, bgId])
 
-    syncPosition()
-    const interval = setInterval(syncPosition, 100)
-    window.addEventListener('scroll', syncPosition, { passive: true })
-    window.addEventListener('resize', syncPosition, { passive: true })
+  // Resize quando card muda de tamanho
+  useEffect(() => {
+    const card = cardRef.current
+    if (!card || !window.ResizeObserver) return
+    const ro = new ResizeObserver(() => {
+      if (_api) {
+        const w = card.offsetWidth, h = card.offsetHeight
+        if (w > 0 && h > 0) _api.resizeTo(w, h)
+      }
+    })
+    ro.observe(card)
+    return () => ro.disconnect()
+  })
 
-    return () => {
-      clearInterval(interval)
-      window.removeEventListener('scroll', syncPosition)
-      window.removeEventListener('resize', syncPosition)
-      const c = document.getElementById('quita-canvas')
-      if (c) c.style.display = 'none'
-    }
-  }, [isExpanded])
-
-  useEffect(() => { sceneRef.current?.updateXP(xp, level) }, [xp, level])
-  useEffect(() => { sceneRef.current?.setFocusMode(isExpanded) }, [isExpanded])
+  useEffect(() => { _api?.updateXP(xp, level) }, [xp, level])
+  useEffect(() => { _api?.setFocusMode(isExpanded) }, [isExpanded])
 
   useEffect(() => {
-    return () => {
-      sceneRef.current?.dispose()
-      sceneRef.current = null
-      const c = document.getElementById('quita-canvas')
-      if (c) c.style.display = 'none'
+    if (_api && modelPath && modelPath !== _currentModel) {
+      _api.loadModel(modelPath); _currentModel = modelPath
     }
-  }, [])
+  }, [modelPath])
 
-  const celebrate = (count) => sceneRef.current?.onLessonComplete(count)
-  return { celebrate, cardRef }
+  useEffect(() => {
+    if (_api && bgId !== _currentBg) {
+      _api.setBackground(bgId || 'padrao'); _currentBg = bgId
+    }
+  }, [bgId])
+
+  const celebrate = (count) => _api?.onLessonComplete(count)
+  const loadModel = useCallback((path) => { if (_api) { _api.loadModel(path); _currentModel = path } }, [])
+  const setBackground = useCallback((id) => { if (_api) { _api.setBackground(id); _currentBg = id } }, [])
+
+  return { celebrate, cardRef, setCanvasRef, loadModel, setBackground }
 }

@@ -1,8 +1,8 @@
-import { useState } from 'react'
-import { CATEGORIES } from '../services/gameConfig'
+import { useState, useEffect } from 'react'
+import { CATEGORIES, T } from '../services/gameConfig'
 import * as XLSX from 'xlsx'
 
-export default function ExpensesScreen({ state, styles, handlers, filters }) {
+export default function ExpensesScreen({ state, styles, handlers, filters, FinTabs }) {
   var ph=styles.ph, card=styles.card, btn=styles.btn, btnOut=styles.btnOut, input=styles.input;
   var NavBar=styles.NavBar;
   var updateExpenseCategory=handlers.updateExpenseCategory, deleteExpense=handlers.deleteExpense;
@@ -11,6 +11,7 @@ export default function ExpensesScreen({ state, styles, handlers, filters }) {
   var togglePdfItem=handlers.togglePdfItem, updatePdfItemCategory=handlers.updatePdfItemCategory;
   var addExpense=handlers.addExpense;
   var toggleOcultar=handlers.toggleOcultar;
+  var saveBudgets=handlers.saveBudgets; // novo handler
   var monthFilter=filters.monthFilter, setMonthFilter=filters.setMonthFilter;
   var catFilters=filters.catFilters, setCatFilters=filters.setCatFilters;
   var customRange=filters.customRange, setCustomRange=filters.setCustomRange;
@@ -21,14 +22,59 @@ export default function ExpensesScreen({ state, styles, handlers, filters }) {
   var expName=filters.expName, setExpName=filters.setExpName;
   var expAmount=filters.expAmount, setExpAmount=filters.setExpAmount;
   var expCat=filters.expCat, setExpCat=filters.setExpCat;
+  var expDate=filters.expDate, setExpDate=filters.setExpDate;
   var totalExpenses=filters.totalExpenses, rendaTotal=filters.rendaTotal;
   var filterByMonth=filters.filterByMonth;
   const [view, setView] = useState("dashboard");
+  const [registerOpen, setRegisterOpen] = useState(false);
+
+  // ── ORÇAMENTO ──
+  // budgets salvo em state.budgets = { Moradia: 1500, Alimentação: 800, ... }
+  const budgets = state.budgets || {};
+  const [editingBudgets, setEditingBudgets] = useState(false);
+  const [budgetDraft, setBudgetDraft] = useState({});
+
+  const openBudgetEdit = () => {
+    setBudgetDraft({ ...budgets });
+    setEditingBudgets(true);
+  };
+
+  const saveBudgetDraft = () => {
+    // Limpa zeros e valores inválidos
+    const cleaned = {};
+    Object.entries(budgetDraft).forEach(([cat, val]) => {
+      const n = parseFloat(String(val).replace(',', '.'));
+      if (n > 0) cleaned[cat] = n;
+    });
+    if (saveBudgets) saveBudgets(cleaned);
+    setEditingBudgets(false);
+  };
+
+  // Média histórica por categoria (todos os meses disponíveis)
+  const allExpenses = (state.expenses || []).filter(e => !e.oculto);
+  const allMonthsSet = [...new Set(allExpenses.map(e => {
+    const d = new Date(e.date);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  }))];
+  const monthCount = Math.max(allMonthsSet.length, 1);
+
+  const historicalAvg = (cat) => {
+    const total = allExpenses.filter(e => e.category === cat).reduce((s, e) => s + e.amount, 0);
+    return Math.round(total / monthCount);
+  };
+
   const months = [...new Set(state.expenses.filter(e => !e.oculto).map(e => { const d = new Date(e.date); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); }))].sort().reverse();
+
+  useEffect(() => {
+    if (monthFilter === "all" && months.length > 0) {
+      setMonthFilter(months[0]);
+    }
+  }, []);
+
   const monthLabel = (m) => { if (m === "all") return "Todos"; if (m === "custom") return "Personalizado"; const [y, mo] = m.split("-"); const names = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"]; return names[parseInt(mo) - 1] + " " + y; };
   const COLORS = ["#7B2FF2","#22C55E","#EF4444","#F59E0B","#3B82F6","#EC4899","#14B8A6","#F97316","#8B5CF6","#06B6D4","#84CC16","#E11D48","#6366F1","#999"];
-  const expByMonthAll = state.expenses.filter(filterByMonth); // todos (exibição)
-  const expByMonth = expByMonthAll.filter(e => !e.oculto); // sem ocultos (cálculos)
+  const expByMonthAll = state.expenses.filter(filterByMonth);
+  const expByMonth = expByMonthAll.filter(e => !e.oculto);
   const catData = CATEGORIES.map((cat, i) => {
     const total = expByMonth.filter(e => e.category === cat).reduce((s, e) => s + e.amount, 0);
     return { cat, total, color: COLORS[i % COLORS.length], count: expByMonth.filter(e => e.category === cat).length };
@@ -42,6 +88,13 @@ export default function ExpensesScreen({ state, styles, handlers, filters }) {
   });
   const maxMonthly = Math.max(...monthlyTotals.map(m => m.total), 1);
   const toggleCatFilter = (cat) => { setCatFilters(prev => prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]); };
+
+  // Cor da barra de orçamento
+  const budgetBarColor = (pct) => {
+    if (pct >= 1) return '#EF4444';    // vermelho
+    if (pct >= 0.8) return '#F59E0B';  // amarelo
+    return '#22C55E';                   // verde
+  };
 
   const DonutChart = () => {
     if (catData.length === 0) return null;
@@ -68,24 +121,229 @@ export default function ExpensesScreen({ state, styles, handlers, filters }) {
     );
   };
 
-  return (
-    <div style={{ background: "#F2F0F8", minHeight: "100vh" }}>
-      <div style={ph}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <div>
-            <div style={{ fontSize: 13, opacity: 0.7, fontWeight: 500 }}>Gastos · {monthLabel(monthFilter)}</div>
-            <div style={{ fontSize: 30, fontWeight: 700, letterSpacing: -0.5 }}>R$ {totalExpenses.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</div>
+  // ── VIEW ORÇAMENTO ──
+  const BudgetView = () => {
+    const catBudgetData = CATEGORIES.map((cat, i) => {
+      const spent = expByMonth.filter(e => e.category === cat).reduce((s, e) => s + e.amount, 0);
+      const limit = budgets[cat] || 0;
+      const pct = limit > 0 ? spent / limit : 0;
+      const avg = historicalAvg(cat);
+      return { cat, spent, limit, pct, avg, color: COLORS[i % COLORS.length] };
+    });
+
+    const configured = catBudgetData.filter(c => c.limit > 0);
+    const unconfigured = catBudgetData.filter(c => c.limit === 0 && c.spent > 0);
+    const alerts = configured.filter(c => c.pct >= 0.8);
+    const totalLimit = configured.reduce((s, c) => s + c.limit, 0);
+    const totalSpent = configured.reduce((s, c) => s + c.spent, 0);
+
+    if (editingBudgets) {
+      return (
+        <div style={card}>
+          <div style={{ fontSize: T.body, fontWeight: T.bold, color: T.ink, marginBottom: 4 }}>Definir orçamento</div>
+          <div style={{ fontSize: T.caption, color: T.secondary, marginBottom: 16 }}>
+            Deixe em branco para não monitorar. A sugestão é baseada na sua média histórica.
           </div>
-          <div style={{ display: "flex", gap: 4 }}>
-            <button onClick={() => setView("dashboard")} style={{ padding: "7px 14px", borderRadius: 12, fontSize: 12, fontWeight: 600, border: "none", background: view === "dashboard" ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.1)", color: "#fff", cursor: "pointer" }}>📊</button>
-            <button onClick={() => setView("list")} style={{ padding: "7px 14px", borderRadius: 12, fontSize: 12, fontWeight: 600, border: "none", background: view === "list" ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.1)", color: "#fff", cursor: "pointer" }}>📋</button>
+          {CATEGORIES.map((cat, i) => {
+            const avg = historicalAvg(cat);
+            return (
+              <div key={cat} style={{ marginBottom: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{ width: 10, height: 10, borderRadius: 3, background: COLORS[i % COLORS.length], flexShrink: 0 }} />
+                    <span style={{ fontSize: T.sub, fontWeight: T.semi, color: T.ink }}>{cat}</span>
+                  </div>
+                  {avg > 0 && (
+                    <button
+                      onClick={() => setBudgetDraft(p => ({ ...p, [cat]: avg }))}
+                      style={{ fontSize: T.micro, color: T.accent, background: "#EDE9FE", border: "none", borderRadius: 8, padding: "3px 8px", cursor: "pointer", fontWeight: T.semi }}
+                    >
+                      Sugerir R$ {avg.toLocaleString('pt-BR')}
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="R$ 0,00 (sem limite)"
+                  value={budgetDraft[cat] || ''}
+                  onChange={e => {
+                    const v = e.target.value.replace(/[^0-9.,]/g, '');
+                    setBudgetDraft(p => ({ ...p, [cat]: v }));
+                  }}
+                  style={{ ...input, marginBottom: 0 }}
+                />
+              </div>
+            );
+          })}
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <button style={{ ...btn, flex: 1 }} onClick={saveBudgetDraft}>Salvar</button>
+            <button style={{ ...btnOut, flex: 1 }} onClick={() => setEditingBudgets(false)}>Cancelar</button>
           </div>
         </div>
-        {rendaTotal > 0 && <div style={{ fontSize: 12, opacity: 0.65, marginTop: 4, fontWeight: 500 }}>{Math.round((totalExpenses / rendaTotal) * 100)}% da renda mensal</div>}
-        <div style={{ display: "flex", gap: 5, marginTop: 12, flexWrap: "wrap" }}>
-          <button onClick={() => { setMonthFilter("all"); setShowCustomRange(false); }} style={{ padding: "5px 12px", borderRadius: 14, fontSize: 12, fontWeight: 600, border: "none", background: monthFilter === "all" ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.12)", color: "#fff", cursor: "pointer" }}>Todos</button>
-          {months.map(m => <button key={m} onClick={() => { setMonthFilter(m); setShowCustomRange(false); }} style={{ padding: "5px 12px", borderRadius: 14, fontSize: 12, fontWeight: monthFilter === m ? 600 : 400, border: "none", background: monthFilter === m ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.12)", color: "#fff", cursor: "pointer" }}>{monthLabel(m)}</button>)}
-          <button onClick={() => { setMonthFilter("custom"); setShowCustomRange(true); }} style={{ padding: "5px 12px", borderRadius: 14, fontSize: 12, fontWeight: monthFilter === "custom" ? 600 : 400, border: "none", background: monthFilter === "custom" ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.12)", color: "#fff", cursor: "pointer" }}>📅</button>
+      );
+    }
+
+    return (
+      <>
+        {/* Alertas */}
+        {alerts.length > 0 && (
+          <div style={{ background: "linear-gradient(135deg,#FEF3C7,#FDE68A)", borderRadius: 14, padding: "12px 14px", marginBottom: 12, display: "flex", alignItems: "flex-start", gap: 10 }}>
+            <span style={{ fontSize: 20, flexShrink: 0 }}>⚠️</span>
+            <div>
+              <div style={{ fontSize: T.sub, fontWeight: T.bold, color: "#92400E", marginBottom: 2 }}>
+                {alerts.length === 1 ? '1 categoria no limite' : `${alerts.length} categorias no limite`}
+              </div>
+              <div style={{ fontSize: T.caption, color: "#B45309" }}>
+                {alerts.map(a => `${a.cat} (${Math.round(a.pct * 100)}%)`).join(' · ')}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Resumo geral */}
+        {configured.length > 0 && (
+          <div style={{ ...card, marginBottom: 12 }}>
+            <div style={{ fontSize: T.sub, fontWeight: T.bold, color: T.ink, marginBottom: 10 }}>Resumo do orçamento</div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+              <span style={{ fontSize: T.caption, color: T.secondary }}>Total planejado</span>
+              <span style={{ fontSize: T.sub, fontWeight: T.bold, color: T.ink }}>R$ {totalLimit.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+              <span style={{ fontSize: T.caption, color: T.secondary }}>Total gasto</span>
+              <span style={{ fontSize: T.sub, fontWeight: T.bold, color: totalSpent > totalLimit ? T.danger : T.ink }}>
+                R$ {totalSpent.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
+              </span>
+            </div>
+            {/* Barra geral */}
+            {(() => {
+              const pctGeral = totalLimit > 0 ? Math.min(totalSpent / totalLimit, 1) : 0;
+              return (
+                <div style={{ background: "#F3F4F6", borderRadius: 8, height: 8, overflow: "hidden" }}>
+                  <div style={{ width: `${Math.min(pctGeral * 100, 100)}%`, height: "100%", background: budgetBarColor(totalSpent / totalLimit), borderRadius: 8, transition: "width 0.4s" }} />
+                </div>
+              );
+            })()}
+            {totalLimit > 0 && (
+              <div style={{ fontSize: T.caption, color: T.muted, marginTop: 5, textAlign: "right" }}>
+                {Math.round((totalSpent / totalLimit) * 100)}% do planejado
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Categorias com orçamento */}
+        {configured.length > 0 && (
+          <div style={card}>
+            <div style={{ fontSize: T.sub, fontWeight: T.bold, color: T.ink, marginBottom: 12 }}>Por categoria</div>
+            {configured.map(c => {
+              const pctClamped = Math.min(c.pct, 1);
+              const isAlert = c.pct >= 0.8;
+              const isOver = c.pct >= 1;
+              return (
+                <div key={c.cat} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: "1px solid #F5F5F5" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <div style={{ width: 10, height: 10, borderRadius: 3, background: c.color, flexShrink: 0 }} />
+                      <span style={{ fontSize: T.sub, fontWeight: T.semi, color: T.ink }}>{c.cat}</span>
+                      {isOver && <span style={{ fontSize: T.micro, background: "#FEE2E2", color: T.danger, borderRadius: 6, padding: "2px 6px", fontWeight: T.bold }}>ESTOURADO</span>}
+                      {isAlert && !isOver && <span style={{ fontSize: T.micro, background: "#FEF3C7", color: T.warning, borderRadius: 6, padding: "2px 6px", fontWeight: T.bold }}>ATENÇÃO</span>}
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <span style={{ fontSize: T.sub, fontWeight: T.bold, color: isOver ? T.danger : T.ink }}>
+                        R$ {c.spent.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
+                      </span>
+                      <span style={{ fontSize: T.caption, color: T.muted }}> / R$ {c.limit.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}</span>
+                    </div>
+                  </div>
+                  <div style={{ background: "#F3F4F6", borderRadius: 8, height: 8, overflow: "hidden" }}>
+                    <div style={{
+                      width: `${pctClamped * 100}%`,
+                      height: "100%",
+                      background: budgetBarColor(c.pct),
+                      borderRadius: 8,
+                      transition: "width 0.4s",
+                      boxShadow: isAlert ? `0 0 6px ${budgetBarColor(c.pct)}88` : "none"
+                    }} />
+                  </div>
+                  <div style={{ fontSize: T.caption, color: T.muted, marginTop: 4, textAlign: "right" }}>
+                    {Math.round(c.pct * 100)}% · sobra R$ {Math.max(c.limit - c.spent, 0).toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Categorias sem orçamento mas com gastos */}
+        {unconfigured.length > 0 && (
+          <div style={{ ...card, background: "#FAFAFA" }}>
+            <div style={{ fontSize: T.caption, fontWeight: T.semi, color: T.muted, marginBottom: 8 }}>Sem orçamento definido</div>
+            {unconfigured.map(c => (
+              <div key={c.cat} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid #F5F5F5" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: 3, background: "#DDD" }} />
+                  <span style={{ fontSize: T.sub, color: T.muted }}>{c.cat}</span>
+                </div>
+                <span style={{ fontSize: T.sub, color: T.muted }}>R$ {c.spent.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* CTA quando não tem orçamento ainda */}
+        {configured.length === 0 && (
+          <div style={{ ...card, textAlign: "center", padding: 32 }}>
+            <div style={{ fontSize: 32, marginBottom: 10 }}>🎯</div>
+            <div style={{ fontSize: T.body, fontWeight: T.bold, color: T.ink, marginBottom: 6 }}>Defina seu orçamento</div>
+            <div style={{ fontSize: T.sub, color: T.secondary, marginBottom: 16 }}>
+              Controle quanto planeja gastar por categoria e acompanhe em tempo real.
+            </div>
+            <button style={{ ...btn, width: "100%" }} onClick={openBudgetEdit}>
+              Configurar orçamento
+            </button>
+          </div>
+        )}
+
+        {/* Botão editar (quando já tem) */}
+        {configured.length > 0 && (
+          <button style={{ ...btnOut, width: "100%", marginTop: 4 }} onClick={openBudgetEdit}>
+            ✏️ Editar orçamento
+          </button>
+        )}
+      </>
+    );
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
+      <div style={{ ...ph, flexShrink: 0 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div>
+            <div style={{ fontSize: T.sub, opacity: 0.7, fontWeight: T.regular }}>Gastos · {monthLabel(monthFilter)}</div>
+            <div style={{ fontSize: T.hero, fontWeight: T.bold, letterSpacing: T.lsTitle }}>R$ {totalExpenses.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</div>
+          </div>
+          <div style={{ display: "flex", gap: 4 }}>
+            {[
+              { key: "dashboard", label: "Dashboard" },
+              { key: "list", label: "Lista" },
+              { key: "budget", label: "Orçamento" },
+            ].map(tab => (
+              <button key={tab.key} onClick={() => setView(tab.key)} style={{ padding: "6px 12px", borderRadius: 12, fontSize: T.caption, fontWeight: view === tab.key ? T.bold : T.regular, border: "none", background: view === tab.key ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.1)", color: "#fff", cursor: "pointer", whiteSpace: "nowrap" }}>
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {rendaTotal > 0 && <div style={{ fontSize: T.caption, opacity: 0.65, marginTop: 4, fontWeight: T.regular }}>{Math.round((totalExpenses / rendaTotal) * 100)}% da renda mensal</div>}
+        {FinTabs && <FinTabs />}
+        <div className="month-scroll" style={{ display: "flex", gap: 5, marginTop: 12, overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none", msOverflowStyle: "none", paddingBottom: 2 }}>
+          <style>{`.month-scroll::-webkit-scrollbar{display:none}`}</style>
+          <button onClick={() => { setMonthFilter("all"); setShowCustomRange(false); }} style={{ padding: "5px 12px", borderRadius: 14, fontSize: 12, fontWeight: 600, border: "none", background: monthFilter === "all" ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.12)", color: "#fff", cursor: "pointer", flexShrink: 0 }}>Todos</button>
+          {months.map(m => <button key={m} onClick={() => { setMonthFilter(m); setShowCustomRange(false); }} style={{ padding: "5px 12px", borderRadius: 14, fontSize: 12, fontWeight: monthFilter === m ? 600 : 400, border: "none", background: monthFilter === m ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.12)", color: "#fff", cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}>{monthLabel(m)}</button>)}
+          <button onClick={() => { setMonthFilter("custom"); setShowCustomRange(true); }} style={{ padding: "5px 12px", borderRadius: 14, fontSize: 12, fontWeight: monthFilter === "custom" ? 600 : 400, border: "none", background: monthFilter === "custom" ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.12)", color: "#fff", cursor: "pointer", flexShrink: 0 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z"/></svg>
+          </button>
         </div>
         {showCustomRange && monthFilter === "custom" && <div style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center" }}>
           <input type="date" value={customRange.start} onChange={e => setCustomRange(p => ({ ...p, start: e.target.value }))} style={{ flex: 1, padding: "6px 8px", borderRadius: 10, border: "none", fontSize: 12, background: "rgba(255,255,255,0.25)", color: "#fff" }} />
@@ -93,25 +351,74 @@ export default function ExpensesScreen({ state, styles, handlers, filters }) {
           <input type="date" value={customRange.end} onChange={e => setCustomRange(p => ({ ...p, end: e.target.value }))} style={{ flex: 1, padding: "6px 8px", borderRadius: 10, border: "none", fontSize: 12, background: "rgba(255,255,255,0.25)", color: "#fff" }} />
         </div>}
       </div>
+      <div style={{ flex: 1, overflowY: "auto" }}>
       <div style={{ padding: 16 }}>
-        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-          <button style={{ ...btn, flex: 1, fontSize: 14, padding: "12px 8px" }} onClick={() => setShowExpenseForm(true)}>+ Registrar</button>
-          <label style={{ ...btnOut, flex: 1, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: "12px 8px", fontSize: 14 }}>Excel<input type="file" accept=".xlsx,.xls,.csv" onChange={handleExcelUpload} style={{ display: "none" }} /></label>
-          <label style={{ ...btnOut, flex: 1, display: "flex", alignItems: "center", justifyContent: "center", cursor: pdfParsing ? "wait" : "pointer", padding: "12px 8px", fontSize: 14, opacity: pdfParsing ? 0.6 : 1 }}>{pdfParsing ? "Lendo..." : "PDF"}<input type="file" accept=".pdf" onChange={handlePdfUpload} disabled={pdfParsing} style={{ display: "none" }} /></label>
+        <div style={{ position: "relative", marginBottom: 10 }}>
+          <button style={{ ...btn, width: "100%", fontSize: 14, padding: "12px 8px" }} onClick={() => setRegisterOpen(!registerOpen)}>+ Registrar</button>
+          {registerOpen && <>
+            <div onClick={() => setRegisterOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 30 }} />
+            <div style={{ position: "absolute", top: "100%", left: 0, right: 0, marginTop: 4, background: "#fff", borderRadius: 14, boxShadow: "0 8px 32px rgba(0,0,0,0.15)", overflow: "hidden", zIndex: 31 }}>
+              <button onClick={() => { setRegisterOpen(false); setShowExpenseForm(true); }} style={{ width: "100%", padding: "14px 16px", border: "none", background: "transparent", fontSize: 14, fontWeight: 600, color: "#333", cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 10, borderBottom: "1px solid #F0F0F0" }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                Manual
+              </button>
+              <label style={{ width: "100%", padding: "14px 16px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: 14, fontWeight: 600, color: "#333", borderBottom: "1px solid #F0F0F0" }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2" strokeLinecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h8"/></svg>
+                Excel / CSV
+                <input type="file" accept=".xlsx,.xls,.csv" onChange={(e) => { setRegisterOpen(false); handleExcelUpload(e); }} style={{ display: "none" }} />
+              </label>
+              <label style={{ width: "100%", padding: "14px 16px", display: "flex", alignItems: "center", gap: 10, cursor: pdfParsing ? "wait" : "pointer", fontSize: 14, fontWeight: 600, color: "#333", opacity: pdfParsing ? 0.6 : 1 }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2" strokeLinecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
+                {pdfParsing ? "Lendo..." : "Fatura PDF"}
+                <input type="file" accept=".pdf" onChange={(e) => { setRegisterOpen(false); handlePdfUpload(e); }} disabled={pdfParsing} style={{ display: "none" }} />
+              </label>
+            </div>
+          </>}
         </div>
         {importStep === "pdf-loading" && <div style={{ ...card, padding: 24, textAlign: "center" }}><div style={{ width: 56, height: 56, border: "4px solid #EDE9FE", borderTop: "4px solid #7B2FF2", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 8px" }} />
-      <div style={{ fontSize: 15, fontWeight: 600, color: "#333", marginBottom: 4 }}>Analisando...</div><div style={{ fontSize: 13, color: "#999" }}>A Quita está lendo seus dados 🔍</div></div>}
+      <div style={{ fontSize: 15, fontWeight: 600, color: "#333", marginBottom: 4 }}>Analisando...</div><div style={{ fontSize: 13, color: "#999" }}>A Quita está lendo seus dados</div></div>}
         {importStep === "pdf-preview" && pdfPreview && <div style={{ ...card, padding: 20 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}><span style={{ fontSize: 28 }}>✅</span><span style={{ fontSize: 16, fontWeight: 700, color: "#333" }}>Gastos encontrados!</span></div>
-          <div style={{ fontSize: 13, color: "#999", marginBottom: 16 }}>Encontrei {pdfPreview.length} gastos. Desmarque os que não quiser:</div>
-          <div style={{ maxHeight: 320, overflowY: "auto", marginBottom: 14 }}>
-            {pdfPreview.map((item, i) => <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid #F0F0F0" }}>
-              <button onClick={() => togglePdfItem(i)} style={{ width: 24, height: 24, borderRadius: 8, border: "2px solid " + (item.selected ? "#7B2FF2" : "#DDD"), background: item.selected ? "linear-gradient(135deg,#6B21E8,#7B2FF2)" : "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, padding: 0 }}>{item.selected && <svg width="12" height="12" viewBox="0 0 16 16"><path d="M3 8l4 4 6-7" stroke="#fff" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>}</button>
-              <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 14, color: item.selected ? "#333" : "#BBB", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</div>
-                <select value={item.category} onChange={e => updatePdfItemCategory(i, e.target.value)} style={{ fontSize: 11, color: "#7B2FF2", background: "#EDE9FE", border: "none", borderRadius: 6, padding: "2px 6px", marginTop: 2 }}>{CATEGORIES.map(c => <option key={c}>{c}</option>)}</select>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}><div style={{ width:32,height:32,borderRadius:10,background:"#DCFCE7",display:"flex",alignItems:"center",justifyContent:"center" }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16A34A" strokeWidth="2.5" strokeLinecap="round"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div><span style={{ fontSize: 16, fontWeight: 700, color: "#333" }}>Gastos encontrados!</span></div>
+          <div style={{ fontSize: 13, color: "#999", marginBottom: 16 }}>Encontrei {pdfPreview.length} gastos. Edite valores/datas ou desmarque os que não quiser:</div>
+          <div style={{ maxHeight: 400, overflowY: "auto", marginBottom: 14 }}>
+            {pdfPreview.map((item, i) => {
+              const fmtDate = (d) => { if (!d) return '—'; try { const dt = new Date(d); return dt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) } catch(e) { return d } };
+              return <div key={i} style={{ padding: "12px 0", borderBottom: "1px solid #F0F0F0" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <button onClick={() => togglePdfItem(i)} style={{ width: 24, height: 24, borderRadius: 8, border: "2px solid " + (item.selected ? "#7B2FF2" : "#DDD"), background: item.selected ? "linear-gradient(135deg,#6B21E8,#7B2FF2)" : "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, padding: 0 }}>{item.selected && <svg width="12" height="12" viewBox="0 0 16 16"><path d="M3 8l4 4 6-7" stroke="#fff" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>}</button>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, color: item.selected ? "#333" : "#BBB", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+                      <select value={item.category} onChange={e => updatePdfItemCategory(i, e.target.value)} style={{ fontSize: 11, color: "#7B2FF2", background: "#EDE9FE", border: "none", borderRadius: 6, padding: "2px 6px" }}>{CATEGORIES.map(c => <option key={c}>{c}</option>)}</select>
+                      <span style={{ fontSize: 11, color: "#CCC" }}>{fmtDate(item.date)}</span>
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: item.selected ? "#7B2FF2" : "#CCC", whiteSpace: "nowrap" }}>R$ {item.amount?.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                </div>
+                {item.selected && <div style={{ marginTop: 8, marginLeft: 34 }}>
+                  <div style={{ marginBottom: 6 }}>
+                    <div style={{ fontSize: 9, color: "#BBB", fontWeight: 600, marginBottom: 2 }}>DESCRIÇÃO</div>
+                    <input type="text" defaultValue={item.name}
+                      onBlur={e => { if (e.target.value.trim()) setPdfPreview(prev => prev.map((p, j) => j === i ? { ...p, name: e.target.value.trim() } : p)) }}
+                      style={{ width: "100%", padding: "6px 8px", borderRadius: 8, border: "1px solid #EDE9FE", fontSize: 13, outline: "none", boxSizing: "border-box", color: "#333" }} />
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 9, color: "#BBB", fontWeight: 600, marginBottom: 2 }}>VALOR (R$)</div>
+                      <input type="text" defaultValue={item.amount.toFixed(2).replace('.', ',')}
+                        onBlur={e => { const v = parseFloat(e.target.value.replace(/[^\d,.]/g, '').replace(',', '.')); if (v > 0) setPdfPreview(prev => prev.map((p, j) => j === i ? { ...p, amount: v } : p)) }}
+                        style={{ width: "100%", padding: "6px 8px", borderRadius: 8, border: "1px solid #EDE9FE", fontSize: 13, outline: "none", boxSizing: "border-box", color: "#333" }} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 9, color: "#BBB", fontWeight: 600, marginBottom: 2 }}>DATA</div>
+                      <input type="date" defaultValue={item.date ? item.date.slice(0, 10) : ''}
+                        onChange={e => { if (e.target.value) setPdfPreview(prev => prev.map((p, j) => j === i ? { ...p, date: e.target.value } : p)) }}
+                        style={{ width: "100%", padding: "5px 8px", borderRadius: 8, border: "1px solid #EDE9FE", fontSize: 12, outline: "none", boxSizing: "border-box", color: "#333" }} />
+                    </div>
+                  </div>
+                </div>}
               </div>
-              <span style={{ fontSize: 14, fontWeight: 600, color: item.selected ? "#7B2FF2" : "#BBB", whiteSpace: "nowrap" }}>R$ {item.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
-            </div>)}
+            })}
           </div>
           <div style={{ background: "linear-gradient(135deg,#F5F3FF,#EDE9FE)", borderRadius: 12, padding: 12, marginBottom: 14, display: "flex", justifyContent: "space-between" }}><span style={{ fontSize: 13, color: "#6B5FA0", fontWeight: 500 }}>{pdfPreview.filter(e => e.selected).length} selecionados</span><span style={{ fontSize: 13, fontWeight: 700, color: "#7B2FF2" }}>R$ {pdfPreview.filter(e => e.selected).reduce((s, e) => s + e.amount, 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span></div>
           <div style={{ display: "flex", gap: 8 }}><button style={{ ...btn, flex: 1 }} onClick={confirmPdfImport}>Importar ({pdfPreview.filter(e => e.selected).length})</button><button style={{ ...btnOut, flex: 1 }} onClick={() => { setPdfPreview(null); setImportStep(null); }}>Cancelar</button></div>
@@ -119,15 +426,18 @@ export default function ExpensesScreen({ state, styles, handlers, filters }) {
         {showExpenseForm && <div style={{ ...card, padding: 20 }}>
           <input style={{ ...input, marginBottom: 10 }} placeholder="O que gastou?" value={expName} onChange={e => setExpName(e.target.value)} />
           <input style={{ ...input, marginBottom: 10 }} placeholder="Quanto? (R$)" type="number" value={expAmount} onChange={e => setExpAmount(e.target.value)} />
-          <select style={{ ...input, marginBottom: 12 }} value={expCat} onChange={e => setExpCat(e.target.value)}>{CATEGORIES.map(c => <option key={c}>{c}</option>)}</select>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+            <select style={{ ...input, flex: 1, marginBottom: 0 }} value={expCat} onChange={e => setExpCat(e.target.value)}>{CATEGORIES.map(c => <option key={c}>{c}</option>)}</select>
+            <input type="date" style={{ ...input, flex: 1, marginBottom: 0 }} value={expDate} onChange={e => setExpDate(e.target.value)} />
+          </div>
           <div style={{ display: "flex", gap: 8 }}><button style={{ ...btn, flex: 1 }} onClick={addExpense}>Salvar (+5 XP)</button><button style={{ ...btnOut, flex: 1 }} onClick={() => setShowExpenseForm(false)}>Cancelar</button></div>
         </div>}
 
         {view === "dashboard" && state.expenses.length > 0 && !importStep && !showExpenseForm && <>
           <div style={card}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#333" }}>Por categoria</div>
-              {catFilters.length > 0 && <button onClick={() => setCatFilters([])} style={{ fontSize: 11, color: "#7B2FF2", background: "#EDE9FE", border: "none", borderRadius: 10, padding: "4px 12px", cursor: "pointer", fontWeight: 600 }}>✕ Limpar</button>}
+              <div style={{ fontSize: T.sub, fontWeight: T.bold, color: T.ink }}>Por categoria</div>
+              {catFilters.length > 0 && <button onClick={() => setCatFilters([])} style={{ fontSize: 11, color: "#7B2FF2", background: "#EDE9FE", border: "none", borderRadius: 10, padding: "4px 12px", cursor: "pointer", fontWeight: 600 }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg> Limpar</button>}
             </div>
             <DonutChart />
             <div style={{ marginTop: 4, marginBottom: 8, fontSize: 11, color: "#AAA", textAlign: "center" }}>Toque para selecionar · múltipla seleção</div>
@@ -136,15 +446,15 @@ export default function ExpensesScreen({ state, styles, handlers, filters }) {
                 const pct = grandTotal > 0 ? Math.round((c.total / grandTotal) * 100) : 0;
                 return <div key={c.cat} onClick={() => toggleCatFilter(c.cat)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 10, marginBottom: 2, cursor: "pointer", opacity: catFilters.length === 0 || catFilters.includes(c.cat) ? 1 : 0.35, background: catFilters.includes(c.cat) ? "#F5F3FF" : "transparent", transition: "all 0.2s" }}>
                   <div style={{ width: 12, height: 12, borderRadius: 4, background: c.color, flexShrink: 0 }} />
-                  <span style={{ flex: 1, fontSize: 13, color: "#333", fontWeight: catFilters.includes(c.cat) ? 600 : 400 }}>{c.cat}</span>
-                  <span style={{ fontSize: 12, color: "#BBB" }}>{pct}%</span>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: "#333", minWidth: 80, textAlign: "right" }}>R$ {c.total.toLocaleString("pt-BR", { minimumFractionDigits: 0 })}</span>
+                  <span style={{ flex: 1, fontSize: T.sub, color: T.ink, fontWeight: catFilters.includes(c.cat) ? T.semi : T.regular }}>{c.cat}</span>
+                  <span style={{ fontSize: T.caption, color: T.muted }}>{pct}%</span>
+                  <span style={{ fontSize: T.sub, fontWeight: T.semi, color: T.ink, minWidth: 80, textAlign: "right" }}>R$ {c.total.toLocaleString("pt-BR", { minimumFractionDigits: 0 })}</span>
                 </div>;
               })}
             </div>
           </div>
           {monthlyTotals.length > 1 && <div style={card}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "#333", marginBottom: 12 }}>Evolução mensal</div>
+            <div style={{ fontSize: T.sub, fontWeight: T.bold, color: T.ink, marginBottom: 12 }}>Evolução mensal</div>
             <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 120 }}>
               {monthlyTotals.map(m => {
                 const h = Math.max(8, (m.total / maxMonthly) * 100);
@@ -168,10 +478,10 @@ export default function ExpensesScreen({ state, styles, handlers, filters }) {
             </div>)}
           </div>}
           {catData.length > 0 && <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <div style={{ ...card, textAlign: "center", marginBottom: 0 }}><div style={{ fontSize: 11, color: "#BBB", fontWeight: 600, letterSpacing: 0.5 }}>LANÇAMENTOS</div><div style={{ fontSize: 22, fontWeight: 700, color: "#7B2FF2", marginTop: 4 }}>{expByMonth.length}</div></div>
-            <div style={{ ...card, textAlign: "center", marginBottom: 0 }}><div style={{ fontSize: 11, color: "#BBB", fontWeight: 600, letterSpacing: 0.5 }}>CATEGORIAS</div><div style={{ fontSize: 22, fontWeight: 700, color: "#7B2FF2", marginTop: 4 }}>{catData.length}</div></div>
-            <div style={{ ...card, textAlign: "center", marginBottom: 0 }}><div style={{ fontSize: 11, color: "#BBB", fontWeight: 600, letterSpacing: 0.5 }}>MAIOR GASTO</div><div style={{ fontSize: 13, fontWeight: 700, color: "#EF4444", marginTop: 4 }}>{catData[0]?.cat || "-"}</div></div>
-            <div style={{ ...card, textAlign: "center", marginBottom: 0 }}><div style={{ fontSize: 11, color: "#BBB", fontWeight: 600, letterSpacing: 0.5 }}>TICKET MÉDIO</div><div style={{ fontSize: 13, fontWeight: 700, color: "#333", marginTop: 4 }}>R$ {expByMonth.length > 0 ? Math.round(grandTotal / expByMonth.length).toLocaleString("pt-BR") : 0}</div></div>
+            <div style={{ ...card, textAlign: "center", marginBottom: 0 }}><div style={{ fontSize: T.caption, color: T.muted, fontWeight: T.semi, letterSpacing: 0.5 }}>LANÇAMENTOS</div><div style={{ fontSize: 22, fontWeight: T.bold, color: T.accent, marginTop: 4 }}>{expByMonth.length}</div></div>
+            <div style={{ ...card, textAlign: "center", marginBottom: 0 }}><div style={{ fontSize: T.caption, color: T.muted, fontWeight: T.semi, letterSpacing: 0.5 }}>CATEGORIAS</div><div style={{ fontSize: 22, fontWeight: T.bold, color: T.accent, marginTop: 4 }}>{catData.length}</div></div>
+            <div style={{ ...card, textAlign: "center", marginBottom: 0 }}><div style={{ fontSize: T.caption, color: T.muted, fontWeight: T.semi, letterSpacing: 0.5 }}>MAIOR GASTO</div><div style={{ fontSize: T.sub, fontWeight: T.bold, color: T.danger, marginTop: 4 }}>{catData[0]?.cat || "-"}</div></div>
+            <div style={{ ...card, textAlign: "center", marginBottom: 0 }}><div style={{ fontSize: T.caption, color: T.muted, fontWeight: T.semi, letterSpacing: 0.5 }}>TICKET MÉDIO</div><div style={{ fontSize: T.sub, fontWeight: T.bold, color: T.ink, marginTop: 4 }}>R$ {expByMonth.length > 0 ? Math.round(grandTotal / expByMonth.length).toLocaleString("pt-BR") : 0}</div></div>
           </div>}
         </>}
 
@@ -182,14 +492,14 @@ export default function ExpensesScreen({ state, styles, handlers, filters }) {
               if (cat !== "Todos" && count === 0) return null;
               const isActive = cat === "Todos" ? (catFilters.length === 0) : catFilters.includes(cat);
               const hiddenCount = cat === "Todos" ? expByMonthAll.filter(e => e.oculto).length : expByMonthAll.filter(e => e.category === cat && e.oculto).length;
-              return <button key={cat} onClick={() => cat === "Todos" ? setCatFilters([]) : toggleCatFilter(cat)} style={{ padding: "6px 12px", borderRadius: 20, fontSize: 12, border: isActive ? "1.5px solid #7B2FF2" : "1.5px solid #E5E5E5", background: isActive ? "linear-gradient(135deg,#EDE9FE,#DDD6FE)" : "#fff", color: isActive ? "#7B2FF2" : "#999", cursor: "pointer", fontWeight: isActive ? 600 : 400 }}>{cat} ({count}{hiddenCount > 0 ? ", "+hiddenCount+"🚫" : ""})</button>;
+              return <button key={cat} onClick={() => cat === "Todos" ? setCatFilters([]) : toggleCatFilter(cat)} style={{ padding: "6px 12px", borderRadius: 20, fontSize: 12, border: isActive ? "1.5px solid #7B2FF2" : "1.5px solid #E5E5E5", background: isActive ? "linear-gradient(135deg,#EDE9FE,#DDD6FE)" : "#fff", color: isActive ? "#7B2FF2" : "#999", cursor: "pointer", fontWeight: isActive ? 600 : 400 }}>{cat} ({count}{hiddenCount > 0 ? ", "+hiddenCount+" ocultos" : ""})</button>;
             })}
           </div>
           {CATEGORIES.map(cat => {
             if (catFilters.length > 0 && !catFilters.includes(cat)) return null;
-            const ce = expByMonthAll.filter(e => e.category === cat); // todos (ocultos aparecem na lista)
+            const ce = expByMonthAll.filter(e => e.category === cat);
             if (ce.length === 0) return null;
-            const ct = ce.filter(e => !e.oculto).reduce((s, e) => s + e.amount, 0); // total só dos visíveis
+            const ct = ce.filter(e => !e.oculto).reduce((s, e) => s + e.amount, 0);
             return (<div key={cat} style={card}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
                 <span style={{ fontSize: 15, fontWeight: 700, color: "#333" }}>{cat}</span>
@@ -218,13 +528,15 @@ export default function ExpensesScreen({ state, styles, handlers, filters }) {
             </div>);
           })}
         </>}
-        {state.expenses.length === 0 && !importStep && <div style={{ textAlign: "center", color: "#BBB", padding: 48, fontSize: 14 }}>
-      
-      <div style={{ fontWeight: 600, color: "#999", marginBottom: 4 }}>Nenhum gasto ainda</div>
-      <div style={{ fontSize: 13 }}>Registre ou importe uma fatura!</div>
-    </div>}
+
+        {view === "budget" && !importStep && !showExpenseForm && BudgetView()}
+
+        {state.expenses.length === 0 && !importStep && <div style={{ textAlign: "center", color: T.muted, padding: 48, fontSize: T.sub }}>
+          <div style={{ fontWeight: T.semi, color: T.secondary, marginBottom: 4 }}>Nenhum gasto ainda</div>
+          <div style={{ fontSize: T.sub }}>Registre ou importe uma fatura!</div>
+        </div>}
       </div>
-      <div style={{ height: 20 }} /><NavBar />
+      </div>
     </div>
   );
 }

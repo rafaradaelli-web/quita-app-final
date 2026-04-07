@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { DEBT_TYPES, DEBT_ICONS, TYPE_DEFAULTS } from '../services/gameConfig'
 import DebtCard, { calcDebtSummary, fmtM, fmtM2, fmtDt } from './DebtCard'
 
-export default function DebtsScreen({ state, styles, addDebt, deleteDebt, NavBar }) {
+export default function DebtsScreen({ state, setState, save, styles, addDebt, deleteDebt, NavBar, FinTabs }) {
   var ph=styles.ph, card=styles.card, btn=styles.btn, btnOut=styles.btnOut, input=styles.input;
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name:"", type:"cartao", balance:"", rate:"", installment:"", installmentsLeft:"", amortization:"price", dueDay:"" });
@@ -21,12 +21,14 @@ export default function DebtsScreen({ state, styles, addDebt, deleteDebt, NavBar
   function setF(key, val) { setForm(function(p){ var n={...p}; n[key]=val; return n; }); }
 
   return (
-    <div style={{background:"#F2F0F8",minHeight:"100vh"}}>
-      <div style={ph}>
+    <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
+      <div style={{...ph,flexShrink:0}}>
         <div style={{fontSize:13,opacity:0.7,fontWeight:500}}>Suas dividas</div>
         <div style={{fontSize:28,fontWeight:700,letterSpacing:-0.5}}>R$ {fmtM(totalDebts)}</div>
         <div style={{fontSize:12,opacity:0.65,marginTop:2}}>{state.debts.length} {state.debts.length===1?"divida":"dividas"} cadastradas</div>
+        {FinTabs && <FinTabs />}
       </div>
+      <div style={{flex:1,overflowY:"auto"}}>
       <div style={{padding:16}}>
         <button style={{...btn,marginBottom:16}} onClick={function(){ setShowForm(!showForm); }}>{showForm?"Cancelar":"+ Cadastrar divida"}</button>
         {showForm && (
@@ -68,9 +70,19 @@ export default function DebtsScreen({ state, styles, addDebt, deleteDebt, NavBar
         )}
         {state.debts.length===0 && !showForm && (
           <div style={{textAlign:"center",padding:48}}>
-            
             <div style={{fontSize:15,fontWeight:700,color:"#999",marginBottom:6}}>Nenhuma dívida cadastrada</div>
-            <div style={{fontSize:13,color:"#BBB"}}>Cadastre suas dívidas para ver o plano de quitação e economizar em juros</div>
+            <div style={{fontSize:13,color:"#BBB",marginBottom:16}}>Cadastre suas dívidas para ver o plano de quitação e economizar em juros</div>
+            {!state.noDebts ? (
+              <button onClick={() => { setState(prev => { const n = { ...prev, noDebts: true }; save(n); return n }) }} style={{padding:"10px 20px",borderRadius:12,border:"1.5px solid #22C55E",background:"rgba(34,197,94,0.06)",color:"#22C55E",fontSize:13,fontWeight:600,cursor:"pointer"}}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22C55E" strokeWidth="2.5" strokeLinecap="round" style={{verticalAlign:"middle",marginRight:6}}><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                Não tenho dívidas
+              </button>
+            ) : (
+              <div style={{padding:"10px 16px",borderRadius:12,background:"#DCFCE7",color:"#16A34A",fontSize:13,fontWeight:600,display:"inline-flex",alignItems:"center",gap:6}}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16A34A" strokeWidth="2.5" strokeLinecap="round"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                Sem dívidas — parabéns!
+              </div>
+            )}
           </div>
         )}
         {state.debts.length > 0 && (
@@ -86,7 +98,7 @@ export default function DebtsScreen({ state, styles, addDebt, deleteDebt, NavBar
           <DebtCard key={d.id} debt={d} styles={{card,btn,btnOut,input}} onDelete={deleteDebt} onCalc={calcDebtSummary} />
         ); })}
       </div>
-      <div style={{height:20}}/><NavBar/>
+      </div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CAT_NORM, CAT_GRUPOS, CATEGORIES } from '../services/gameConfig'
+import { CAT_NORM, CAT_GRUPOS, CATEGORIES, fmtM, fmtM2, calcDebtSummary } from '../services/gameConfig'
 
 function getGrupo(cat) {
   var norm = CAT_NORM[cat] || cat;
@@ -116,6 +116,14 @@ export default function PlanejamentoScreen({ state, styles, setScreen, savePlano
     trabalho: ["Trabalho"],
     investimentos: ["Investimentos","Transferências"],
   };
+
+  // Mapa reverso: categoria → grupo (para detalhe do plano)
+  var CAT_GRUPO_MAP = {};
+  Object.keys(grupos).forEach(function(g) {
+    grupos[g].forEach(function(cat) {
+      CAT_GRUPO_MAP[cat] = g === "investimentos" || g === "trabalho" ? "reserva" : g;
+    });
+  });
 
   var totalPorGrupo = {};
   Object.keys(grupos).forEach(function(g){
@@ -237,19 +245,19 @@ export default function PlanejamentoScreen({ state, styles, setScreen, savePlano
 
   // ── Alertas preditivos ────────────────────────────────
   var alertasPred = [];
-  if (semanas[3]>semanas[0]*1.3) alertasPred.push({icon:"📅",msg:"Voce costuma gastar 30%+ a mais no fim do mes. Configure um limite semanal."});
-  if (catCresceu&&maxCrescimento>30) alertasPred.push({icon:"📈",msg:catCresceu+" esta subindo "+Math.round(maxCrescimento)+"% ao mes. Em 3 meses pode comprometer R$ "+fmtM(catMedia[catCresceu]*0.3)+" extras."});
-  if (diaMaiorGasto&&parseInt(diaMaiorGasto)>20) alertasPred.push({icon:"🗓️",msg:"Dia "+diaMaiorGasto+" e seu pico de gastos. Evite compras impulsivas nessa data."});
-  if (tendencia>20) alertasPred.push({icon:"⚠️",msg:"Seus gastos cresceram "+Math.round(tendencia)+"% esse mes. No ritmo atual, vai precisar de mais R$ "+fmtM((total30-total60_30))+" por mes."});
-  if (rendaMensal>0&&sobraMes<rendaMensal*0.05) alertasPred.push({icon:"🔴",msg:"Sua sobra mensal e menor que 5% da renda. Qualquer imprevisto ja causa desequilibrio."});
+  if (semanas[3]>semanas[0]*1.3) alertasPred.push({icon:"M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z",iconColor:"#3B82F6",msg:"Voce costuma gastar 30%+ a mais no fim do mes. Configure um limite semanal."});
+  if (catCresceu&&maxCrescimento>30) alertasPred.push({icon:"M23 6l-9.5 9.5-5-5L1 18",iconColor:"#22C55E",msg:catCresceu+" esta subindo "+Math.round(maxCrescimento)+"% ao mes. Em 3 meses pode comprometer R$ "+fmtM(catMedia[catCresceu]*0.3)+" extras."});
+  if (diaMaiorGasto&&parseInt(diaMaiorGasto)>20) alertasPred.push({icon:"M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z",iconColor:"#F59E0B",msg:"Dia "+diaMaiorGasto+" e seu pico de gastos. Evite compras impulsivas nessa data."});
+  if (tendencia>20) alertasPred.push({icon:"M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01",iconColor:"#F59E0B",msg:"Seus gastos cresceram "+Math.round(tendencia)+"% esse mes. No ritmo atual, vai precisar de mais R$ "+fmtM((total30-total60_30))+" por mes."});
+  if (rendaMensal>0&&sobraMes<rendaMensal*0.05) alertasPred.push({icon:"M12 2a10 10 0 100 20 10 10 0 000-20zM12 8v4M12 16h.01",iconColor:"#EF4444",msg:"Sua sobra mensal e menor que 5% da renda. Qualquer imprevisto ja causa desequilibrio."});
 
   var perfilLabels = {negativo:"Atenção: Deficit", apertado:"Apertado", equilibrado:"Equilibrado", folgado:"Folgado"};
   var perfilCores = {negativo:"#EF4444", apertado:"#F59E0B", equilibrado:"#7B2FF2", folgado:"#16A34A"};
   var objetivoOpts = [
-    {v:"quitar", l:"Quitar dívidas", d:"Prioridade máxima: eliminar dívidas", icon:"🎯"},
-    {v:"poupar", l:"Reserva/Investir", d:"Construir emergência de 6 meses", icon:"🛡️"},
-    {v:"investir", l:"Investir", d:"Fazer dinheiro trabalhar por você", icon:"📈"},
-    {v:"equilibrar", l:"Equilibrar", d:"Viver bem sem apertar", icon:"⚖️"},
+    {v:"quitar", l:"Quitar dívidas", d:"Prioridade máxima: eliminar dívidas", icon:"M12 2a10 10 0 100 20 10 10 0 000-20zM12 6a6 6 0 100 12 6 6 0 000-12zM12 10a2 2 0 100 4 2 2 0 000-4z",iconColor:"#7C3AED"},
+    {v:"poupar", l:"Reserva/Investir", d:"Construir emergência de 6 meses", icon:"M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",iconColor:"#3B82F6"},
+    {v:"investir", l:"Investir", d:"Fazer dinheiro trabalhar por você", icon:"M23 6l-9.5 9.5-5-5L1 18",iconColor:"#22C55E"},
+    {v:"equilibrar", l:"Equilibrar", d:"Viver bem sem apertar", icon:"M12 3v18M3 12h18M5 7l7-4 7 4",iconColor:"#F59E0B"},
   ];
 
   // Renderização
@@ -365,7 +373,7 @@ export default function PlanejamentoScreen({ state, styles, setScreen, savePlano
                 <div style={{...card,border:"2px solid #7B2FF2",marginBottom:16}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
                     <div style={{fontSize:14,fontWeight:700,color:"#7B2FF2"}}>{labels[catDetalhe]||catDetalhe} — últimos 30 dias</div>
-                    <button onClick={function(){ setCatDetalhe(null); }} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"#BBB"}}>✕</button>
+                    <button onClick={function(){ setCatDetalhe(null); }} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"#BBB"}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
                   </div>
                   <div style={{fontSize:13,fontWeight:700,color:"#333",marginBottom:10}}>Total: R$ {fmtM2(total)}</div>
                   {itens.sort(function(a,b){ return b.amount-a.amount; }).slice(0,10).map(function(e,i){
@@ -449,14 +457,14 @@ export default function PlanejamentoScreen({ state, styles, setScreen, savePlano
         {etapa==="plano" && plano && (
           <div>
             {/* Header do plano */}
-            <div style={{...card,background:"linear-gradient(135deg,#6B21E8,#9B5FF7)",border:"none",color:"#fff",marginBottom:16}}>
+            <div style={{...card,background:"linear-gradient(160deg, #1E0A3C 0%, #3B1578 35%, #6D28D9 100%)",border:"none",color:"#fff",marginBottom:16,boxShadow:"0 8px 32px rgba(30,10,60,0.35)"}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
                 <div>
                   <div style={{fontSize:11,opacity:0.75,fontWeight:600,letterSpacing:0.5}}>SEU PERFIL</div>
                   <div style={{fontSize:20,fontWeight:800}}>{perfilLabels[plano.perfil]||"Personalizado"}</div>
                 </div>
                 <div style={{fontSize:36}}>
-                  {plano.perfil==="folgado"?"😎":plano.perfil==="equilibrado"?"🎯":plano.perfil==="apertado"?"💪":"⚠️"}
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={plano.perfil==="folgado"?"#22C55E":plano.perfil==="equilibrado"?"#3B82F6":plano.perfil==="apertado"?"#F59E0B":"#EF4444"} strokeWidth="2" strokeLinecap="round"><path d={plano.perfil==="folgado"?"M12 2a10 10 0 100 20 10 10 0 000-20zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01":plano.perfil==="equilibrado"?"M12 3v18M3 12h18":"M12 2a10 10 0 100 20 10 10 0 000-20zM12 8v4M12 16h.01"}/></svg>
                 </div>
               </div>
               <div style={{background:"rgba(255,255,255,0.15)",borderRadius:12,padding:12}}>
@@ -475,10 +483,10 @@ export default function PlanejamentoScreen({ state, styles, setScreen, savePlano
               <div style={{fontSize:11,fontWeight:700,color:"#9B8EBE",letterSpacing:0.5,marginBottom:14}}>DISTRIBUICAO IDEAL DA SUA RENDA</div>
               <div style={{fontSize:12,color:"#999",marginBottom:14}}>Base: R$ {fmtM2(plano.rendaBase)}/mes</div>
               {[
-                {k:"necessidades",l:"Necessidades",icon:"🏠",cor:"#7B2FF2",desc:"Moradia, alimentacao, saude, transporte"},
-                {k:"desejos",l:"Desejos",icon:"🎉",cor:"#F59E0B",desc:"Lazer, delivery, assinaturas, roupas"},
-                {k:"dividas",l:"Quitacao dividas",icon:"💳",cor:"#EF4444",desc:"Parcelas e quitacao antecipada"},
-                {k:"reserva",l:"Poupanca/Invest.",icon:"📈",cor:"#16A34A",desc:"Reserva de emergencia e investimentos"},
+                {k:"necessidades",l:"Necessidades",icon:"M3 12l9-9 9 9M5 10v10a1 1 0 001 1h3a1 1 0 001-1v-4h4v4a1 1 0 001 1h3a1 1 0 001-1V10",iconColor:"#7B2FF2",cor:"#7B2FF2",desc:"Moradia, alimentacao, saude, transporte"},
+                {k:"desejos",l:"Desejos",icon:"M12 2a10 10 0 100 20 10 10 0 000-20zM8 14s1.5 2 4 2 4-2 4-2",iconColor:"#F59E0B",cor:"#F59E0B",desc:"Lazer, delivery, assinaturas, roupas"},
+                {k:"dividas",l:"Quitacao dividas",icon:"M1 4h22v16H1zM1 10h22",iconColor:"#EF4444",cor:"#EF4444",desc:"Parcelas e quitacao antecipada"},
+                {k:"reserva",l:"Poupanca/Invest.",icon:"M23 6l-9.5 9.5-5-5L1 18",iconColor:"#22C55E",cor:"#16A34A",desc:"Reserva de emergencia e investimentos"},
               ].filter(function(item){ return (plano.aloc[item.k]||0) > 0; }).map(function(item){
                 var pct = plano.aloc[item.k]||0;
                 var val = plano.valores[item.k]||0;
@@ -520,7 +528,7 @@ export default function PlanejamentoScreen({ state, styles, setScreen, savePlano
                 <div style={{...card,border:"2px solid #7B2FF2",marginBottom:16}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
                     <div style={{fontSize:14,fontWeight:700,color:"#7B2FF2"}}>{labels[catDetalhe]||catDetalhe} — últimos 30 dias</div>
-                    <button onClick={function(){ setCatDetalhe(null); }} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"#BBB"}}>✕</button>
+                    <button onClick={function(){ setCatDetalhe(null); }} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"#BBB"}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
                   </div>
                   <div style={{fontSize:13,fontWeight:700,color:"#333",marginBottom:10}}>Total: R$ {fmtM2(total)}</div>
                   {itens.sort(function(a,b){ return b.amount-a.amount; }).slice(0,10).map(function(e){
@@ -544,7 +552,7 @@ export default function PlanejamentoScreen({ state, styles, setScreen, savePlano
                 <div style={{fontSize:11,fontWeight:700,color:"#9B8EBE",letterSpacing:0.5,marginBottom:12}}>DICAS PARA O SEU PERFIL</div>
                 {plano.dicas.map(function(d,i){ return (
                   <div key={i} style={{display:"flex",gap:10,padding:"10px 0",borderBottom:i<plano.dicas.length-1?"1px solid #F5F5F5":"none"}}>
-                    <span style={{fontSize:16,flexShrink:0}}>💡</span>
+                    <div style={{width:28,height:28,borderRadius:8,background:"#FEF3C7",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round"><path d="M9 18h6M10 22h4M12 2a7 7 0 00-4 12.7V17h8v-2.3A7 7 0 0012 2z"/></svg></div>
                     <span style={{fontSize:13,color:"#555",lineHeight:1.5}}>{d}</span>
                   </div>
                 ); })}
