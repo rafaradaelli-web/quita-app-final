@@ -1166,12 +1166,28 @@ Responda APENAS JSON válido sem markdown:
             {messages.length === 0 && (
               <div style={{textAlign:'center',padding:'16px 16px'}}>
                 <img src="/models/quita-ia.png" alt="Quita" style={{width:140,height:140,objectFit:'contain',margin:'0 auto 4px',display:'block'}}/>
-                <div style={{fontSize:20,fontWeight:800,color:'#1A0A2E',marginBottom:6}}>Fale com a Quita</div>
-                <div style={{fontSize:14,color:'#888',lineHeight:1.5,marginBottom:18}}>Ela conhece seus dados financeiros e responde com base na sua situação real.</div>
+                <div style={{fontSize:T.title,fontWeight:T.bold,color:T.ink,marginBottom:6}}>Fale com a Quita</div>
+                <div style={{fontSize:T.sub,color:T.secondary,lineHeight:T.relaxed,marginBottom:18}}>Ela conhece seus dados financeiros e responde com base na sua situação real.</div>
                 <div style={{display:'flex',flexDirection:'column',gap:6}}>
-                  {['Posso parcelar uma compra de R$ 800?','Como reduzir meus gastos com delivery?','Qual dívida devo pagar primeiro?','O que fazer com o 13º?'].map((q,i)=>(
-                    <button key={i} onClick={()=>sendMessage(q)} style={{padding:'10px 14px',borderRadius:12,border:'1px solid rgba(124,58,237,0.15)',background:'rgba(255,255,255,0.8)',color:'#7C3AED',fontSize:13,fontWeight:500,cursor:'pointer',textAlign:'left',display:'flex',alignItems:'center',gap:8}}><ChevronRight size={14}/> {q}</button>
-                  ))}
+                  {(() => {
+                    const suggestions = []
+                    const exp = (state.expenses||[]).filter(e => !e.oculto)
+                    const debts = state.debts || []
+                    if (exp.length === 0 && debts.length === 0) {
+                      suggestions.push('Por onde devo começar a organizar minhas finanças?')
+                      suggestions.push('Quanto eu deveria guardar por mês?')
+                      suggestions.push('O que é reserva de emergência?')
+                    } else {
+                      if (debts.length > 0) suggestions.push('Qual dívida devo pagar primeiro?')
+                      if (exp.length >= 3) suggestions.push('Onde posso cortar gastos?')
+                      suggestions.push('Como estou financeiramente?')
+                      if ((state.patrimonio?.reserva||0) === 0) suggestions.push('Como montar minha reserva de emergência?')
+                      else suggestions.push('O que fazer com o 13º?')
+                    }
+                    return suggestions.slice(0,4).map((q,i)=>(
+                      <button key={i} onClick={()=>sendMessage(q)} style={{padding:'10px 14px',borderRadius:12,border:'1px solid rgba(124,58,237,0.15)',background:'rgba(255,255,255,0.8)',color:T.accent,fontSize:T.sub,fontWeight:T.regular,cursor:'pointer',textAlign:'left',display:'flex',alignItems:'center',gap:8}}><ChevronRight size={14}/> {q}</button>
+                    ))
+                  })()}
                 </div>
               </div>
             )}

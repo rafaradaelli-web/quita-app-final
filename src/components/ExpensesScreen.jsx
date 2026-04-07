@@ -531,9 +531,12 @@ export default function ExpensesScreen({ state, styles, handlers, filters, FinTa
 
         {view === "budget" && !importStep && !showExpenseForm && BudgetView()}
 
-        {state.expenses.length === 0 && !importStep && <div style={{ textAlign: "center", color: T.muted, padding: 48, fontSize: T.sub }}>
-          <div style={{ fontWeight: T.semi, color: T.secondary, marginBottom: 4 }}>Nenhum gasto ainda</div>
-          <div style={{ fontSize: T.sub }}>Registre ou importe uma fatura!</div>
+        {state.expenses.length === 0 && !importStep && !showExpenseForm && <div style={{ textAlign: "center", padding: "40px 20px" }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>📊</div>
+          <div style={{ fontSize: T.body, fontWeight: T.bold, color: T.ink, marginBottom: 6 }}>Registre seus gastos</div>
+          <div style={{ fontSize: T.sub, color: T.secondary, lineHeight: T.relaxed, marginBottom: 20 }}>Importe uma fatura do cartão ou registre manualmente. A Quita categoriza tudo automaticamente.</div>
+          <button onClick={() => setShowExpenseForm(true)} style={{ ...btn, marginBottom: 8 }}>+ Registrar gasto manual</button>
+          <div style={{ fontSize: T.caption, color: T.muted, marginTop: 4 }}>Ou toque em "+ Registrar" acima para importar PDF/Excel</div>
         </div>}
       </div>
       </div>

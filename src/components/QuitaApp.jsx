@@ -137,6 +137,8 @@ const [state, setState] = useState(DEFAULT_STATE);
   const [finTab, setFinTab] = useState("expenses");
   const saveTimer = useRef(null);
   const dataLoaded = useRef(false);
+  const loadedSnapshot = useRef(null); // snapshot do que foi carregado do Supabase
+  const loadFailed = useRef(false); // se load falhou, NUNCA salvar
 
   // Navegação inteligente — redireciona sub-screens para as sub-tabs corretas
   const navigate = useCallback((target) => {
@@ -159,8 +161,8 @@ const [state, setState] = useState(DEFAULT_STATE);
       try {
         const { data, error } = await sb.from("user_data").select("data").eq("user_id", user.id).single();
         if (error && error.code !== 'PGRST116') {
-          // Erro real (não é "row not found") — NÃO marcar como loaded pra não sobrescrever
           console.error('[Quita] Erro ao carregar dados:', error);
+          loadFailed.current = true; // IMPEDE qualquer save nesta sessão
           setDbLoading(false);
           return;
         }
@@ -169,9 +171,26 @@ const [state, setState] = useState(DEFAULT_STATE);
           loaded.level = getLevel(loaded.xp);
           loaded.profileCompletion = calcProfile(loaded);
           setState(loaded);
+          loadedSnapshot.current = {
+            completedLessons: (loaded.completedLessons || []).length,
+            expenses: (loaded.expenses || []).length,
+            xp: loaded.xp || 0,
+            onboardingDone: loaded.onboardingDone || false,
+          };
           if (loaded.onboardingDone) { try { localStorage.setItem('quita_onboarding_' + user.id, 'true') } catch(e) {} }
           console.log('[Quita] Dados carregados:', { xp: loaded.xp, coins: loaded.coins, lessons: loaded.completedLessons?.length || 0 });
         } else {
+          // Novo usuário — verificar se não é um load falso
+          const hadOnboarding = (() => { try { return localStorage.getItem('quita_onboarding_' + user.id) === 'true' } catch(e) { return false } })()
+          if (hadOnboarding) {
+            // ALARME: localStorage diz que já fez onboarding mas Supabase não tem dados
+            // Provavelmente erro de sincronização — NÃO permitir save pra não sobrescrever
+            console.error('[Quita] ALERTA: onboarding no localStorage mas sem dados no Supabase — saves bloqueados');
+            loadFailed.current = true;
+            setDbLoading(false);
+            return;
+          }
+          loadedSnapshot.current = { completedLessons: 0, expenses: 0, xp: 0, onboardingDone: false };
           console.log('[Quita] Novo usuário — sem dados salvos');
         }
         dataLoaded.current = true;
@@ -184,8 +203,8 @@ const [state, setState] = useState(DEFAULT_STATE);
         trackSessionStart(loadedState);
       } catch (err) {
         console.error('[Quita] Falha na conexão:', err);
+        loadFailed.current = true; // IMPEDE saves
         setDbLoading(false);
-        // NÃO marcar dataLoaded — impede qualquer save que sobrescreveria dados
       }
     };
     load();
@@ -220,11 +239,31 @@ const [state, setState] = useState(DEFAULT_STATE);
 
   // ── Salvar no Supabase com debounce ──
   const save = useCallback((s) => {
-    // PROTEÇÃO: nunca salvar antes de carregar dados do Supabase
+    // PROTEÇÃO 1: nunca salvar antes de carregar dados do Supabase
     if (!dataLoaded.current) { console.warn('[Quita] Save bloqueado — dados ainda não carregados'); return; }
+    // PROTEÇÃO 2: nunca salvar se o load falhou (evita sobrescrever com estado vazio)
+    if (loadFailed.current) { console.warn('[Quita] Save bloqueado — load falhou nesta sessão'); return; }
+    // PROTEÇÃO 3: anti-regressão — nunca salvar dados com menos progresso que o snapshot carregado
+    if (loadedSnapshot.current && loadedSnapshot.current.onboardingDone) {
+      const newLessons = (s.completedLessons || []).length;
+      const newXp = s.xp || 0;
+      const snapLessons = loadedSnapshot.current.completedLessons;
+      const snapXp = loadedSnapshot.current.xp;
+      if (newLessons < snapLessons || newXp < snapXp * 0.5) {
+        console.error('[Quita] SAVE BLOQUEADO — regressão detectada!', {
+          loaded: { lessons: snapLessons, xp: snapXp },
+          tentativa: { lessons: newLessons, xp: newXp }
+        });
+        return;
+      }
+    }
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
-      await sb.from("user_data").upsert({ user_id: user.id, data: s, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+      try {
+        await sb.from("user_data").upsert({ user_id: user.id, data: s, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+      } catch (err) {
+        console.error('[Quita] Erro ao salvar:', err);
+      }
     }, 1000);
   }, [user.id]);
 
@@ -960,6 +999,17 @@ const [state, setState] = useState(DEFAULT_STATE);
     </div>
   );
 
+  // Se load falhou, mostrar aviso e impedir uso (pra não sobrescrever dados reais)
+  if (loadFailed.current && !dataLoaded.current) return (
+    <div style={{ background: "#F2F0F8", minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, padding: 32, textAlign: "center" }}>
+      <div style={{ fontSize: 40 }}>⚠️</div>
+      <div style={{ fontSize: T.title, fontWeight: T.bold, color: T.ink }}>Erro ao carregar dados</div>
+      <div style={{ fontSize: T.sub, color: T.secondary, lineHeight: T.relaxed, maxWidth: 320 }}>Não foi possível conectar com o servidor. Seus dados estão seguros — tente recarregar a página.</div>
+      <button onClick={() => window.location.reload()} style={{ background: "linear-gradient(160deg, #1E0A3C 0%, #3B1578 50%, #6D28D9 100%)", color: "#fff", border: "none", borderRadius: 16, padding: "14px 32px", fontSize: T.body, fontWeight: T.bold, cursor: "pointer", marginTop: 8 }}>Recarregar</button>
+      <button onClick={onSignOut} style={{ background: "transparent", border: "none", color: T.secondary, fontSize: T.sub, cursor: "pointer", marginTop: 4 }}>Sair da conta</button>
+    </div>
+  );
+
 
   // ── Onboarding check ──
   const handleOnboardingComplete = ({ name, age, income, dificuldade, dailyGoal }) => {
@@ -1199,20 +1249,24 @@ const [state, setState] = useState(DEFAULT_STATE);
             const modTotal = modLessons.length
 
             if (nextLesson && parentMod) {
+              const isFirstTime = state.completedLessons.length === 0
               return (
-                <div onClick={() => setScreen("world")} style={{ ...card, cursor: "pointer", padding: "16px", marginBottom: 12, background: lessonDoneToday ? "linear-gradient(135deg,rgba(34,197,94,0.06),rgba(34,197,94,0.02))" : "linear-gradient(135deg,rgba(109,40,217,0.06),rgba(168,85,247,0.03))", border: lessonDoneToday ? "1.5px solid rgba(34,197,94,0.15)" : "1.5px solid rgba(109,40,217,0.1)" }}>
+                <div onClick={() => isFirstTime ? startLesson(nextLesson) : setScreen("world")} style={{ ...card, cursor: "pointer", padding: isFirstTime ? "20px" : "16px", marginBottom: 12, background: lessonDoneToday ? "linear-gradient(135deg,rgba(34,197,94,0.06),rgba(34,197,94,0.02))" : isFirstTime ? "linear-gradient(135deg,rgba(109,40,217,0.10),rgba(168,85,247,0.06))" : "linear-gradient(135deg,rgba(109,40,217,0.06),rgba(168,85,247,0.03))", border: lessonDoneToday ? "1.5px solid rgba(34,197,94,0.15)" : isFirstTime ? "2px solid rgba(109,40,217,0.25)" : "1.5px solid rgba(109,40,217,0.1)", boxShadow: isFirstTime ? "0 4px 20px rgba(109,40,217,0.15)" : "none" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <div style={{ width: 44, height: 44, borderRadius: 14, background: lessonDoneToday ? "#DCFCE7" : "linear-gradient(135deg,#EDE9FE,#DDD6FE)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      {lessonDoneToday ? <CheckCircle size={22} color="#22C55E" /> : <Flame size={22} color={getStreakColor(state.streak)} />}
+                      {lessonDoneToday ? <CheckCircle size={22} color="#22C55E" /> : isFirstTime ? <BookOpen size={22} color="#7C3AED" /> : <Flame size={22} color={getStreakColor(state.streak)} />}
                     </div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: T.sub, fontWeight: T.bold, color: T.ink }}>
-                        {lessonDoneToday ? `Streak garantido! Continue estudando` : state.streak > 0 ? `Complete 1 lição pra manter seu streak de ${state.streak} dia${state.streak > 1 ? 's' : ''}!` : 'Complete sua primeira lição!'}
+                      <div style={{ fontSize: isFirstTime ? T.body : T.sub, fontWeight: T.bold, color: T.ink }}>
+                        {lessonDoneToday ? `Streak garantido! Continue estudando` : isFirstTime ? 'Comece sua primeira lição!' : state.streak > 0 ? `Complete 1 lição pra manter seu streak de ${state.streak} dia${state.streak > 1 ? 's' : ''}!` : 'Complete sua primeira lição!'}
                         {!lessonDoneToday && (state.streakFreezes || 0) > 0 && <span style={{ fontSize: T.micro, color: '#3B82F6', display: 'block', marginTop: 2 }}>🧊 {state.streakFreezes} freeze{state.streakFreezes > 1 ? 's' : ''} disponíve{state.streakFreezes > 1 ? 'is' : 'l'}</span>}
                       </div>
-                      <div style={{ fontSize: T.caption, color: T.secondary, marginTop: 2 }}>{parentMod.name} — lição {modDone + 1} de {modTotal}</div>
+                      <div style={{ fontSize: T.caption, color: T.secondary, marginTop: 2 }}>{isFirstTime ? '2 min · ' + parentMod.name : parentMod.name + ' — lição ' + (modDone + 1) + ' de ' + modTotal}</div>
                     </div>
-                    <ArrowRight size={18} color="#7C3AED" />
+                    {isFirstTime
+                      ? <div style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)", color: "#fff", borderRadius: 12, padding: "8px 14px", fontSize: T.caption, fontWeight: T.bold }}>Iniciar</div>
+                      : <ArrowRight size={18} color="#7C3AED" />
+                    }
                   </div>
                 </div>
               )
@@ -1490,7 +1544,8 @@ const [state, setState] = useState(DEFAULT_STATE);
                   <span style={{ fontSize: 12 }}>💰</span> Comprar 3 vidas ({LIVES_CONFIG.buyPrice} moedas)
                 </button>
               )}
-              <button onClick={() => setScreen("world")} style={{ marginTop: 10, padding: 12, border: "none", background: "transparent", color: "#999", fontSize: 13, cursor: "pointer", width: "100%" }}>Voltar pra trilha</button>
+              <button onClick={() => setLessonStep("content")} style={{ marginTop: 10, padding: 12, border: "none", background: "transparent", color: jColor, fontSize: T.sub, fontWeight: T.semi, cursor: "pointer", width: "100%" }}>📖 Reler conteúdo</button>
+              <button onClick={() => setScreen("world")} style={{ marginTop: 4, padding: 12, border: "none", background: "transparent", color: T.muted, fontSize: T.sub, cursor: "pointer", width: "100%" }}>Voltar pra trilha</button>
             </div>
           )}
 
