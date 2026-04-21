@@ -622,12 +622,50 @@ const [state, setState] = useState(DEFAULT_STATE);
     const { type } = filePasswordModal;
 
     if (type === 'excel') {
-      const result = tryReadExcel(filePasswordModal.buffer, filePassword);
-      if (result === 'needs_password') {
-        setToast("Senha incorreta"); setTimeout(() => setToast(null), 2500);
-        return;
+      try {
+        setToast("Desbloqueando Excel..."); setTimeout(() => setToast(null), 8000);
+
+        // Converte ArrayBuffer -> base64 para enviar via JSON
+        const bytes = new Uint8Array(filePasswordModal.buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        const fileBase64 = btoa(binary);
+
+        const resp = await fetch("/api/decrypt-xlsx", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileBase64, password: filePassword }),
+        });
+        const data = await resp.json();
+
+        if (resp.status === 401 || data.error === 'wrong_password') {
+          setToast("Senha incorreta"); setTimeout(() => setToast(null), 2500);
+          return;
+        }
+        if (!resp.ok || !data.ok || !data.fileBase64) {
+          console.error('[Quita] decrypt-xlsx error:', data);
+          setToast("Erro ao desbloquear Excel. Tente novamente."); setTimeout(() => setToast(null), 3000);
+          return;
+        }
+
+        // Decodifica o Excel limpo de volta para ArrayBuffer
+        const decBinary = atob(data.fileBase64);
+        const decBytes = new Uint8Array(decBinary.length);
+        for (let i = 0; i < decBinary.length; i++) decBytes[i] = decBinary.charCodeAt(i);
+
+        // Agora lê o Excel já descriptografado usando o tryReadExcel normal (sem senha)
+        const result = tryReadExcel(decBytes.buffer);
+        if (result === 'needs_password') {
+          // Não deveria acontecer, mas por segurança
+          setToast("Arquivo continua protegido. Tente novamente."); setTimeout(() => setToast(null), 3000);
+          return;
+        }
+        setFilePasswordModal(null); setFilePassword('');
+      } catch (err) {
+        console.error('[Quita] Excel decrypt error:', err);
+        setToast("Erro de conexão. Verifique internet e tente novamente."); setTimeout(() => setToast(null), 3000);
       }
-      setFilePasswordModal(null); setFilePassword('');
+      return;
     }
 
     if (type === 'pdf') {
