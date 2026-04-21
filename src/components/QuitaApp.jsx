@@ -7,7 +7,7 @@ import {
   CATEGORIES, DEFAULT_STATE, LEVELS, getLevel, calcProfile,
   RECEITA_TIPOS, CAT_NORM, CAT_GRUPOS,
   getStreakMultiplier, getStreakColor, STREAK_MILESTONES, getLeagueColor,
-  COIN_REWARDS, LIVES_CONFIG, LEAGUES, LEAGUE_RULES, getWeeklyMissions, MASCOT_MESSAGES, T,
+  COIN_REWARDS, LIVES_CONFIG, LEAGUES, LEAGUE_RULES, getWeeklyMissions, MASCOT_MESSAGES,
 } from '../services/gameConfig'
 import { useQuitaScene } from '../hooks/useQuitaScene'
 import TrilhaScreen from './TrilhaScreen'
@@ -29,82 +29,57 @@ const [state, setState] = useState(DEFAULT_STATE);
   const [qIdx, setQIdx] = useState(0);
   const [selected, setSelected] = useState(-1);
   const [answered, setAnswered] = useState(false);
-  // ── VIDAS — sistema simplificado e robusto ──
-  // Calcula vidas atuais considerando regeneração por tempo
-  const getLives = () => {
-    const base = state.lives ?? 3
-    const lost = state.lastLifeLost || 0
-    if (base >= LIVES_CONFIG.max || lost === 0) return base
-    const elapsed = Date.now() - lost
-    const regened = Math.floor(elapsed / (LIVES_CONFIG.rechargeMinutes * 60000))
-    return Math.min(LIVES_CONFIG.max, base + regened)
-  }
-  const livesRef = useRef(getLives())
+  // ── Vidas persistentes com regeneração ──
+  const livesFromState = state.lives ?? 3
+  const lastLifeLost = state.lastLifeLost || 0
+  const [now, setNow] = useState(Date.now())
 
-  // Atualiza livesRef quando state muda (ex: volta da trilha, reload)
-  useEffect(() => { livesRef.current = getLives() }, [state.lives, state.lastLifeLost])
+  // Calcular vidas regeneradas desde lastLifeLost
+  const livesRegen = lastLifeLost > 0 && livesFromState < LIVES_CONFIG.max
+    ? Math.min(LIVES_CONFIG.max - livesFromState, Math.floor((now - lastLifeLost) / (LIVES_CONFIG.rechargeMinutes * 60000)))
+    : 0
+  const lives = Math.min(LIVES_CONFIG.max, livesFromState + livesRegen)
 
-  // Timer visual — só pra atualizar countdown, NÃO mexe no state
-  const [livesDisplay, setLivesDisplay] = useState(getLives())
-  const [nextLifeStr, setNextLifeStr] = useState('')
-
+  // Timer: atualiza a cada segundo quando vidas < max
   useEffect(() => {
-    const tick = () => {
-      const current = getLives()
-      setLivesDisplay(current)
-      livesRef.current = current
-
-      // Se regenerou totalmente, persistir
-      if (current >= LIVES_CONFIG.max && (state.lives ?? 3) < LIVES_CONFIG.max) {
-        setState(prev => {
-          if ((prev.lives ?? 3) >= LIVES_CONFIG.max) return prev
-          const n = { ...prev, lives: LIVES_CONFIG.max, lastLifeLost: 0 }
-          save(n); return n
-        })
-      }
-
-      // Countdown
-      const base = state.lives ?? 3
-      const lost = state.lastLifeLost || 0
-      if (current < LIVES_CONFIG.max && lost > 0) {
-        const elapsed = Date.now() - lost
-        const rechargeMs = LIVES_CONFIG.rechargeMinutes * 60000
-        const nextRegenIn = rechargeMs - (elapsed % rechargeMs)
-        const secs = Math.ceil(nextRegenIn / 1000)
-        setNextLifeStr(`${Math.floor(secs / 3600)}:${String(Math.floor((secs % 3600) / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`)
-      } else {
-        setNextLifeStr('')
-      }
-    }
-    tick()
-    const interval = setInterval(tick, 1000)
+    if (lives >= LIVES_CONFIG.max) return
+    const interval = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(interval)
-  }, [state.lives, state.lastLifeLost])
+  }, [lives])
 
-  // Alias pra uso no JSX
-  const lives = livesDisplay
+  // Persistir vidas regeneradas
+  useEffect(() => {
+    if (livesRegen > 0) {
+      setState(prev => {
+        const newLives = Math.min(LIVES_CONFIG.max, (prev.lives ?? 3) + livesRegen)
+        const n = { ...prev, lives: newLives, lastLifeLost: newLives >= LIVES_CONFIG.max ? 0 : prev.lastLifeLost }
+        save(n); return n
+      })
+    }
+  }, [livesRegen])
+
+  // Tempo restante pra próxima vida (mm:ss)
+  const nextLifeSeconds = lives < LIVES_CONFIG.max && lastLifeLost > 0
+    ? Math.max(0, LIVES_CONFIG.rechargeMinutes * 60 - Math.floor(((now - lastLifeLost) % (LIVES_CONFIG.rechargeMinutes * 60000)) / 1000))
+    : 0
+  const nextLifeStr = nextLifeSeconds > 0
+    ? `${Math.floor(nextLifeSeconds / 3600)}:${String(Math.floor((nextLifeSeconds % 3600) / 60)).padStart(2, '0')}:${String(nextLifeSeconds % 60).padStart(2, '0')}`
+    : ''
 
   const loseLife = () => {
-    const current = livesRef.current
-    const newLives = Math.max(0, current - 1)
-    livesRef.current = newLives
-    setLivesDisplay(newLives)
     setState(prev => {
+      const newLives = Math.max(0, (prev.lives ?? 3) - 1)
       const n = { ...prev, lives: newLives, lastLifeLost: Date.now() }
       save(n); return n
     })
   }
 
-  const buyLives = () => {
+  const restoreAllLives = () => {
     setState(prev => {
-      if ((prev.coins || 0) < LIVES_CONFIG.buyPrice) return prev
-      const n = { ...prev, lives: LIVES_CONFIG.max, lastLifeLost: 0, coins: prev.coins - LIVES_CONFIG.buyPrice }
-      livesRef.current = LIVES_CONFIG.max
-      setLivesDisplay(LIVES_CONFIG.max)
+      const n = { ...prev, lives: LIVES_CONFIG.max, lastLifeLost: 0 }
       save(n); return n
     })
   }
-
   const [lessonXp, setLessonXp] = useState(0);
   const [combo, setCombo] = useState(0);
   const [streakRestoreModal, setStreakRestoreModal] = useState(false);
@@ -135,10 +110,9 @@ const [state, setState] = useState(DEFAULT_STATE);
   const [ranking, setRanking] = useState([]);
   const [profileModal, setProfileModal] = useState(null);
   const [finTab, setFinTab] = useState("expenses");
+  const [tourStep, setTourStep] = useState(null);
   const saveTimer = useRef(null);
   const dataLoaded = useRef(false);
-  const loadedSnapshot = useRef(null); // snapshot do que foi carregado do Supabase
-  const loadFailed = useRef(false); // se load falhou, NUNCA salvar
 
   // Navegação inteligente — redireciona sub-screens para as sub-tabs corretas
   const navigate = useCallback((target) => {
@@ -161,8 +135,8 @@ const [state, setState] = useState(DEFAULT_STATE);
       try {
         const { data, error } = await sb.from("user_data").select("data").eq("user_id", user.id).single();
         if (error && error.code !== 'PGRST116') {
+          // Erro real (não é "row not found") — NÃO marcar como loaded pra não sobrescrever
           console.error('[Quita] Erro ao carregar dados:', error);
-          loadFailed.current = true; // IMPEDE qualquer save nesta sessão
           setDbLoading(false);
           return;
         }
@@ -171,26 +145,9 @@ const [state, setState] = useState(DEFAULT_STATE);
           loaded.level = getLevel(loaded.xp);
           loaded.profileCompletion = calcProfile(loaded);
           setState(loaded);
-          loadedSnapshot.current = {
-            completedLessons: (loaded.completedLessons || []).length,
-            expenses: (loaded.expenses || []).length,
-            xp: loaded.xp || 0,
-            onboardingDone: loaded.onboardingDone || false,
-          };
           if (loaded.onboardingDone) { try { localStorage.setItem('quita_onboarding_' + user.id, 'true') } catch(e) {} }
           console.log('[Quita] Dados carregados:', { xp: loaded.xp, coins: loaded.coins, lessons: loaded.completedLessons?.length || 0 });
         } else {
-          // Novo usuário — verificar se não é um load falso
-          const hadOnboarding = (() => { try { return localStorage.getItem('quita_onboarding_' + user.id) === 'true' } catch(e) { return false } })()
-          if (hadOnboarding) {
-            // ALARME: localStorage diz que já fez onboarding mas Supabase não tem dados
-            // Provavelmente erro de sincronização — NÃO permitir save pra não sobrescrever
-            console.error('[Quita] ALERTA: onboarding no localStorage mas sem dados no Supabase — saves bloqueados');
-            loadFailed.current = true;
-            setDbLoading(false);
-            return;
-          }
-          loadedSnapshot.current = { completedLessons: 0, expenses: 0, xp: 0, onboardingDone: false };
           console.log('[Quita] Novo usuário — sem dados salvos');
         }
         dataLoaded.current = true;
@@ -203,8 +160,8 @@ const [state, setState] = useState(DEFAULT_STATE);
         trackSessionStart(loadedState);
       } catch (err) {
         console.error('[Quita] Falha na conexão:', err);
-        loadFailed.current = true; // IMPEDE saves
         setDbLoading(false);
+        // NÃO marcar dataLoaded — impede qualquer save que sobrescreveria dados
       }
     };
     load();
@@ -239,31 +196,11 @@ const [state, setState] = useState(DEFAULT_STATE);
 
   // ── Salvar no Supabase com debounce ──
   const save = useCallback((s) => {
-    // PROTEÇÃO 1: nunca salvar antes de carregar dados do Supabase
+    // PROTEÇÃO: nunca salvar antes de carregar dados do Supabase
     if (!dataLoaded.current) { console.warn('[Quita] Save bloqueado — dados ainda não carregados'); return; }
-    // PROTEÇÃO 2: nunca salvar se o load falhou (evita sobrescrever com estado vazio)
-    if (loadFailed.current) { console.warn('[Quita] Save bloqueado — load falhou nesta sessão'); return; }
-    // PROTEÇÃO 3: anti-regressão — nunca salvar dados com menos progresso que o snapshot carregado
-    if (loadedSnapshot.current && loadedSnapshot.current.onboardingDone) {
-      const newLessons = (s.completedLessons || []).length;
-      const newXp = s.xp || 0;
-      const snapLessons = loadedSnapshot.current.completedLessons;
-      const snapXp = loadedSnapshot.current.xp;
-      if (newLessons < snapLessons || newXp < snapXp * 0.5) {
-        console.error('[Quita] SAVE BLOQUEADO — regressão detectada!', {
-          loaded: { lessons: snapLessons, xp: snapXp },
-          tentativa: { lessons: newLessons, xp: newXp }
-        });
-        return;
-      }
-    }
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
-      try {
-        await sb.from("user_data").upsert({ user_id: user.id, data: s, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
-      } catch (err) {
-        console.error('[Quita] Erro ao salvar:', err);
-      }
+      await sb.from("user_data").upsert({ user_id: user.id, data: s, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
     }, 1000);
   }, [user.id]);
 
@@ -409,11 +346,10 @@ const [state, setState] = useState(DEFAULT_STATE);
     currentLessonRef.current = lesson;
     trackLessonStart(lesson);
     setScreen("lesson"); setLessonStep("content"); setQIdx(0);
-    setSelected(-1); setAnswered(false); setLessonXp(0); setCombo(0);
+    setSelected(-1); setAnswered(false); restoreAllLives(); setLessonXp(0); setCombo(0);
   };
 
   const checkAnswer = () => {
-    if (answered) return; // guard contra duplo clique
     const lesson = currentLessonRef.current;
     if (!lesson) return;
     const q = lesson.questions[qIdx];
@@ -457,14 +393,6 @@ const [state, setState] = useState(DEFAULT_STATE);
     setState(prev => {
       const n = { ...prev, expenses: prev.expenses.map(e => e.id === expId ? { ...e, oculto: !e.oculto } : e) };
       n.profileCompletion = calcProfile(n);
-      Promise.resolve().then(() => save(n));
-      return n;
-    });
-  }, [save]);
-
-  const saveBudgets = useCallback((budgets) => {
-    setState(prev => {
-      const n = { ...prev, budgets };
       Promise.resolve().then(() => save(n));
       return n;
     });
@@ -926,13 +854,13 @@ const [state, setState] = useState(DEFAULT_STATE);
     // ── Estilos ──
   const ph = { background: "linear-gradient(160deg, #1E0A3C 0%, #3B1578 35%, #6D28D9 100%)", color: "#fff", padding: "20px 20px 24px", paddingTop: "calc(20px + var(--sat, 0px))", borderRadius: "0 0 28px 28px", boxShadow: "0 8px 32px rgba(30,10,60,0.4)", position: "relative", overflow: "hidden" };
   const card = { background: "rgba(255,255,255,0.95)", backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)", borderRadius: 20, padding: "18px", marginBottom: 12, boxShadow: "0 2px 16px rgba(30,10,60,0.08)", border: "1px solid rgba(0,0,0,0.04)" };
-  const btn = { background: "linear-gradient(160deg, #1E0A3C 0%, #3B1578 50%, #6D28D9 100%)", color: "#fff", border: "none", borderRadius: 16, padding: "15px", width: "100%", fontSize: T.body, fontWeight: T.bold, cursor: "pointer", boxShadow: "0 4px 16px rgba(30,10,60,0.35)", letterSpacing: 0.3 };
-  const btnOut = { ...btn, background: "transparent", color: "#3B1578", border: "2px solid rgba(59,21,120,0.25)", boxShadow: "none", fontWeight: T.semi };
-  const pill = { background: "linear-gradient(135deg, #EDE9FE, #DDD6FE)", color: "#5B21B6", borderRadius: 20, padding: "5px 14px", fontSize: T.caption, fontWeight: T.semi };
-  const pillGreen = { ...pill, background: "linear-gradient(135deg, #DCFCE7, #BBF7D0)", color: T.success };
-  const input = { width: "100%", padding: "14px 16px", borderRadius: 14, border: "1.5px solid rgba(0,0,0,0.08)", fontSize: T.body, outline: "none", boxSizing: "border-box", background: "#FAFAFA", transition: "border-color 0.2s", color: T.ink };
+  const btn = { background: "linear-gradient(160deg, #1E0A3C 0%, #3B1578 50%, #6D28D9 100%)", color: "#fff", border: "none", borderRadius: 16, padding: "15px", width: "100%", fontSize: 16, fontWeight: 700, cursor: "pointer", boxShadow: "0 4px 16px rgba(30,10,60,0.35)", letterSpacing: 0.3 };
+  const btnOut = { ...btn, background: "transparent", color: "#3B1578", border: "2px solid rgba(59,21,120,0.25)", boxShadow: "none", fontWeight: 600 };
+  const pill = { background: "linear-gradient(135deg, #EDE9FE, #DDD6FE)", color: "#5B21B6", borderRadius: 20, padding: "5px 14px", fontSize: 12, fontWeight: 600 };
+  const pillGreen = { ...pill, background: "linear-gradient(135deg, #DCFCE7, #BBF7D0)", color: "#16A34A" };
+  const input = { width: "100%", padding: "14px 16px", borderRadius: 14, border: "1.5px solid rgba(0,0,0,0.08)", fontSize: 15, outline: "none", boxSizing: "border-box", background: "#FAFAFA", transition: "border-color 0.2s" };
   const nav = { display: "flex", justifyContent: "space-around", padding: "10px 0", paddingBottom: "calc(10px + var(--sab, 0px))", background: "#fff", borderTop: "1px solid rgba(0,0,0,0.06)", position: "sticky", bottom: 0, boxShadow: "0 -4px 20px rgba(0,0,0,0.06)", zIndex: 20 };
-  const navItem = (active) => ({ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, fontSize: T.caption, color: active ? "#5B21B6" : T.muted, cursor: "pointer", border: "none", background: "none", fontWeight: active ? T.semi : T.regular });
+  const navItem = (active) => ({ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, fontSize: 11, color: active ? "#5B21B6" : "#AAA", cursor: "pointer", border: "none", background: "none", fontWeight: active ? 600 : 400 });
 
   // ── Hook 3D (sempre antes de qualquer return condicional — regra dos hooks) ──
   const modelPath = `/models/${state.equippedSkin || 'quita-real'}.glb`
@@ -999,17 +927,6 @@ const [state, setState] = useState(DEFAULT_STATE);
     </div>
   );
 
-  // Se load falhou, mostrar aviso e impedir uso (pra não sobrescrever dados reais)
-  if (loadFailed.current && !dataLoaded.current) return (
-    <div style={{ background: "#F2F0F8", minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, padding: 32, textAlign: "center" }}>
-      <div style={{ fontSize: 40 }}>⚠️</div>
-      <div style={{ fontSize: T.title, fontWeight: T.bold, color: T.ink }}>Erro ao carregar dados</div>
-      <div style={{ fontSize: T.sub, color: T.secondary, lineHeight: T.relaxed, maxWidth: 320 }}>Não foi possível conectar com o servidor. Seus dados estão seguros — tente recarregar a página.</div>
-      <button onClick={() => window.location.reload()} style={{ background: "linear-gradient(160deg, #1E0A3C 0%, #3B1578 50%, #6D28D9 100%)", color: "#fff", border: "none", borderRadius: 16, padding: "14px 32px", fontSize: T.body, fontWeight: T.bold, cursor: "pointer", marginTop: 8 }}>Recarregar</button>
-      <button onClick={onSignOut} style={{ background: "transparent", border: "none", color: T.secondary, fontSize: T.sub, cursor: "pointer", marginTop: 4 }}>Sair da conta</button>
-    </div>
-  );
-
 
   // ── Onboarding check ──
   const handleOnboardingComplete = ({ name, age, income, dificuldade, dailyGoal }) => {
@@ -1017,14 +934,14 @@ const [state, setState] = useState(DEFAULT_STATE);
     setState(prev => {
       const n = { ...prev, name, age, income, onboardingDone: true, dificuldade, dailyGoal: dailyGoal || '10min', createdAt: new Date().toISOString() }
       n.profileCompletion = calcProfile(n)
-      // Salvar imediatamente (sem debounce) — crítico
       sb.from("user_data").upsert({ user_id: user.id, data: n, updated_at: new Date().toISOString() }, { onConflict: "user_id" })
         .then(() => console.log('[Quita] Onboarding salvo no Supabase'))
         .catch(e => console.error('[Quita] Erro ao salvar onboarding:', e))
-      // Backup local pra garantir persistência
       try { localStorage.setItem('quita_onboarding_' + user.id, 'true') } catch(e) {}
       return n
     })
+    // Iniciar tour guiado
+    setTimeout(() => setTourStep(0), 600)
   }
 
   // Onboarding — mostrar se usuário nunca completou
@@ -1069,7 +986,7 @@ const [state, setState] = useState(DEFAULT_STATE);
     </div>
   );
 
-  const Toast = () => toast ? <div style={{ position: "fixed", top: 24, left: "50%", transform: "translateX(-50%)", background: "linear-gradient(135deg,#6B21E8,#7B2FF2)", color: "#fff", padding: "12px 24px", borderRadius: 24, fontSize: T.sub, fontWeight: T.semi, zIndex: 99, boxShadow: "0 8px 24px rgba(123,47,242,0.4)", letterSpacing: 0.2, whiteSpace: "nowrap" }}>{toast}</div> : null;
+  const Toast = () => toast ? <div style={{ position: "fixed", top: 24, left: "50%", transform: "translateX(-50%)", background: "linear-gradient(135deg,#6B21E8,#7B2FF2)", color: "#fff", padding: "12px 24px", borderRadius: 24, fontSize: 14, fontWeight: 600, zIndex: 99, boxShadow: "0 8px 24px rgba(123,47,242,0.4)", letterSpacing: 0.2, whiteSpace: "nowrap" }}>{toast}</div> : null;
 
   const Home = () => {
     const completedCount = state.completedLessons.length;
@@ -1117,13 +1034,13 @@ const [state, setState] = useState(DEFAULT_STATE);
               {userName.charAt(0).toUpperCase()}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: T.caption, opacity: 0.5, fontWeight: T.semi, letterSpacing: T.lsWide, marginBottom: 1 }}>OLÁ</div>
-              <div style={{ fontSize: T.title, fontWeight: T.bold, letterSpacing: T.lsTitle, lineHeight: T.tight, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{userName}</div>
+              <div style={{ fontSize: 11, opacity: 0.5, fontWeight: 600, letterSpacing: 1, marginBottom: 1 }}>OLÁ</div>
+              <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: -0.5, lineHeight: 1.1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{userName}</div>
             </div>
             <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
-              <span style={{ background: "rgba(255,255,255,0.10)", borderRadius: 20, padding: "5px 10px", fontSize: T.caption, fontWeight: T.bold, border: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", gap: 4 }}><Flame size={15} color={getStreakColor(state.streak)} /> {state.streak}</span>
-              <span style={{ background: "rgba(255,255,255,0.10)", borderRadius: 20, padding: "5px 10px", fontSize: T.caption, fontWeight: T.bold, border: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", gap: 4 }}><Zap size={15} color="#FBBF24" /> {state.xp.toLocaleString()}</span>
-              <span onClick={() => setScreen("loja")} style={{ background: "rgba(255,255,255,0.10)", borderRadius: 20, padding: "5px 10px", fontSize: T.caption, fontWeight: T.bold, border: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}><Coins size={15} color="#FBBF24" /> {(state.coins||0)}</span>
+              <span style={{ background: "rgba(255,255,255,0.10)", borderRadius: 20, padding: "5px 10px", fontSize: 12, fontWeight: 700, border: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", gap: 4 }}><Flame size={15} color={getStreakColor(state.streak)} /> {state.streak}</span>
+              <span style={{ background: "rgba(255,255,255,0.10)", borderRadius: 20, padding: "5px 10px", fontSize: 12, fontWeight: 700, border: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", gap: 4 }}><Zap size={15} color="#FBBF24" /> {state.xp.toLocaleString()}</span>
+              <span onClick={() => setScreen("loja")} style={{ background: "rgba(255,255,255,0.10)", borderRadius: 20, padding: "5px 10px", fontSize: 12, fontWeight: 700, border: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}><Coins size={15} color="#FBBF24" /> {(state.coins||0)}</span>
             </div>
           </div>
 
@@ -1131,7 +1048,7 @@ const [state, setState] = useState(DEFAULT_STATE);
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{
               background: "rgba(255,255,255,0.12)", borderRadius: 8,
-              padding: "2px 8px", fontSize: T.micro, fontWeight: T.bold, flexShrink: 0,
+              padding: "2px 8px", fontSize: 10, fontWeight: 800, flexShrink: 0,
             }}>Nv {state.level + 1}</span>
             <div style={{ flex: 1, background: "rgba(255,255,255,0.10)", borderRadius: 6, height: 6, overflow: "hidden" }}>
               <div style={{
@@ -1142,7 +1059,7 @@ const [state, setState] = useState(DEFAULT_STATE);
                 boxShadow: "0 0 8px rgba(168,85,247,0.4)",
               }} />
             </div>
-            <span style={{ fontSize: T.micro, opacity: 0.45, fontWeight: T.semi, flexShrink: 0 }}>{levelInfo.name}</span>
+            <span style={{ fontSize: 10, opacity: 0.45, fontWeight: 600, flexShrink: 0 }}>{levelInfo.name}</span>
           </div>
         </div>
 
@@ -1177,10 +1094,10 @@ const [state, setState] = useState(DEFAULT_STATE);
               <>
                 <div style={{ padding: "8px 16px 10px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <div>
-                    <div style={{ fontSize: T.sub, fontWeight: T.bold, color: T.onDark, display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", display: "flex", alignItems: "center", gap: 6 }}>
                       {allDone ? <><GraduationCap size={18} /> Trilha completa!</> : jName}
                     </div>
-                    <div style={{ fontSize: T.caption, color: T.onDarkSub, marginTop: 2 }}>
+                    <div style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", marginTop: 2 }}>
                       {allDone ? "Volte amanhã" : `Lição ${jCompleted + 1} de ${jTotal}`}
                     </div>
                   </div>
@@ -1195,7 +1112,7 @@ const [state, setState] = useState(DEFAULT_STATE);
                         : "linear-gradient(135deg,#fff,#EDE9FE)",
                       color: allDone ? "#fff" : "#6B21E8",
                       border: "none", borderRadius: 20,
-                      padding: "9px 18px", fontSize: T.caption, fontWeight: T.bold,
+                      padding: "9px 18px", fontSize: 12, fontWeight: 800,
                       cursor: "pointer",
                       boxShadow: allDone
                         ? "0 4px 12px rgba(22,163,74,0.5), 0 0 0 2px rgba(34,197,94,0.3)"
@@ -1210,8 +1127,8 @@ const [state, setState] = useState(DEFAULT_STATE);
                     <div style={{ background: "linear-gradient(90deg,#A78BFA,#fff)", borderRadius: 4, height: "100%", width: jPct + "%", transition: "width 0.8s ease" }} />
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
-                    <span style={{ fontSize: T.micro, color: T.onDarkMuted, fontWeight: T.semi }}>{jPct}% concluído</span>
-                    <span style={{ fontSize: T.micro, color: T.onDarkMuted, fontWeight: T.semi }}>{jCompleted}/{jTotal} lições</span>
+                    <span style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", fontWeight: 600 }}>{jPct}% concluído</span>
+                    <span style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", fontWeight: 600 }}>{jCompleted}/{jTotal} lições</span>
                   </div>
                 </div>
               </>
@@ -1228,9 +1145,9 @@ const [state, setState] = useState(DEFAULT_STATE);
                   <div style={{ background: "rgba(255,255,255,0.15)", borderRadius: 4, height: 4, width: 60 }}>
                     <div style={{ background: "linear-gradient(90deg,#A78BFA,#fff)", borderRadius: 4, height: "100%", width: jPct + "%", transition: "width 0.8s ease" }} />
                   </div>
-                  <span style={{ fontSize: T.caption, color: T.onDarkMuted, fontWeight: T.semi }}>{jPct}%</span>
+                  <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", fontWeight: 600 }}>{jPct}%</span>
                 </div>
-                <span style={{ fontSize: T.caption, color: T.onDarkMuted, fontWeight: T.semi }}>
+                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", fontWeight: 600 }}>
                   Trilha ▲
                 </span>
               </div>
@@ -1249,24 +1166,20 @@ const [state, setState] = useState(DEFAULT_STATE);
             const modTotal = modLessons.length
 
             if (nextLesson && parentMod) {
-              const isFirstTime = state.completedLessons.length === 0
               return (
-                <div onClick={() => isFirstTime ? startLesson(nextLesson) : setScreen("world")} style={{ ...card, cursor: "pointer", padding: isFirstTime ? "20px" : "16px", marginBottom: 12, background: lessonDoneToday ? "linear-gradient(135deg,rgba(34,197,94,0.06),rgba(34,197,94,0.02))" : isFirstTime ? "linear-gradient(135deg,rgba(109,40,217,0.10),rgba(168,85,247,0.06))" : "linear-gradient(135deg,rgba(109,40,217,0.06),rgba(168,85,247,0.03))", border: lessonDoneToday ? "1.5px solid rgba(34,197,94,0.15)" : isFirstTime ? "2px solid rgba(109,40,217,0.25)" : "1.5px solid rgba(109,40,217,0.1)", boxShadow: isFirstTime ? "0 4px 20px rgba(109,40,217,0.15)" : "none" }}>
+                <div onClick={() => setScreen("world")} style={{ ...card, cursor: "pointer", padding: "16px", marginBottom: 12, background: lessonDoneToday ? "linear-gradient(135deg,rgba(34,197,94,0.06),rgba(34,197,94,0.02))" : "linear-gradient(135deg,rgba(109,40,217,0.06),rgba(168,85,247,0.03))", border: lessonDoneToday ? "1.5px solid rgba(34,197,94,0.15)" : "1.5px solid rgba(109,40,217,0.1)" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <div style={{ width: 44, height: 44, borderRadius: 14, background: lessonDoneToday ? "#DCFCE7" : "linear-gradient(135deg,#EDE9FE,#DDD6FE)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      {lessonDoneToday ? <CheckCircle size={22} color="#22C55E" /> : isFirstTime ? <BookOpen size={22} color="#7C3AED" /> : <Flame size={22} color={getStreakColor(state.streak)} />}
+                      {lessonDoneToday ? <CheckCircle size={22} color="#22C55E" /> : <Flame size={22} color={getStreakColor(state.streak)} />}
                     </div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: isFirstTime ? T.body : T.sub, fontWeight: T.bold, color: T.ink }}>
-                        {lessonDoneToday ? `Streak garantido! Continue estudando` : isFirstTime ? 'Comece sua primeira lição!' : state.streak > 0 ? `Complete 1 lição pra manter seu streak de ${state.streak} dia${state.streak > 1 ? 's' : ''}!` : 'Complete sua primeira lição!'}
-                        {!lessonDoneToday && (state.streakFreezes || 0) > 0 && <span style={{ fontSize: T.micro, color: '#3B82F6', display: 'block', marginTop: 2 }}>🧊 {state.streakFreezes} freeze{state.streakFreezes > 1 ? 's' : ''} disponíve{state.streakFreezes > 1 ? 'is' : 'l'}</span>}
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "#1E0A3C" }}>
+                        {lessonDoneToday ? `Streak garantido! Continue estudando` : state.streak > 0 ? `Complete 1 lição pra manter seu streak de ${state.streak} dia${state.streak > 1 ? 's' : ''}!` : 'Complete sua primeira lição!'}
+                        {!lessonDoneToday && (state.streakFreezes || 0) > 0 && <span style={{ fontSize: 10, color: '#3B82F6', display: 'block', marginTop: 2 }}>🧊 {state.streakFreezes} freeze{state.streakFreezes > 1 ? 's' : ''} disponíve{state.streakFreezes > 1 ? 'is' : 'l'}</span>}
                       </div>
-                      <div style={{ fontSize: T.caption, color: T.secondary, marginTop: 2 }}>{isFirstTime ? '2 min · ' + parentMod.name : parentMod.name + ' — lição ' + (modDone + 1) + ' de ' + modTotal}</div>
+                      <div style={{ fontSize: 12, color: "#777", marginTop: 2 }}>{parentMod.name} — lição {modDone + 1} de {modTotal}</div>
                     </div>
-                    {isFirstTime
-                      ? <div style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)", color: "#fff", borderRadius: 12, padding: "8px 14px", fontSize: T.caption, fontWeight: T.bold }}>Iniciar</div>
-                      : <ArrowRight size={18} color="#7C3AED" />
-                    }
+                    <ArrowRight size={18} color="#7C3AED" />
                   </div>
                 </div>
               )
@@ -1289,7 +1202,40 @@ const [state, setState] = useState(DEFAULT_STATE);
             return (
               <div style={{ ...card, padding: "12px 14px", marginBottom: 12, display: "flex", alignItems: "center", gap: 10, background: "linear-gradient(135deg,#FFF7ED,#FEF3C7)", border: "1.5px solid #FDE68A" }}>
                 <img src="/models/quita-ia.png" alt="" style={{ width: 36, height: 36, objectFit: "contain", flexShrink: 0 }} />
-                <div style={{ fontSize: T.sub, color: "#92400E", fontWeight: T.regular, lineHeight: T.normal }}>{msg}</div>
+                <div style={{ fontSize: 13, color: "#92400E", fontWeight: 500, lineHeight: 1.4 }}>{msg}</div>
+              </div>
+            )
+          })()}
+
+          {/* ── MISSÕES SEMANAIS ── */}
+
+          {/* ── PRIMEIROS PASSOS (checklist simples pra quem pulou o tour) ── */}
+          {!state.tourDone && !state.tourStep && (() => {
+            const steps = [
+              { id: 'expense', label: 'Registre seus gastos', done: (state.expenses || []).length > 0 },
+              { id: 'income', label: 'Cadastre sua renda', done: (state.income > 0 || (state.receitas || []).length > 0) },
+              { id: 'lesson', label: 'Complete uma lição', done: (state.completedLessons || []).length > 0 },
+              { id: 'diag', label: 'Gere seu diagnóstico', done: !!state.lastDiagnosticDate },
+            ]
+            const doneCount = steps.filter(s => s.done).length
+            if (doneCount === steps.length) {
+              setTimeout(() => setState(prev => { const n = { ...prev, tourDone: true }; save(n); return n }), 1000)
+              return null
+            }
+            return (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 11, color: "#9B8EBE", fontWeight: 700, marginBottom: 8, letterSpacing: 1 }}>PRIMEIROS PASSOS — {doneCount}/{steps.length}</div>
+                <div style={card}>
+                  <div style={{ background: "#F0F0F0", borderRadius: 4, height: 5, marginBottom: 10 }}>
+                    <div style={{ background: "linear-gradient(90deg,#7C3AED,#A78BFA)", height: "100%", borderRadius: 4, width: `${(doneCount / steps.length) * 100}%`, transition: "width 0.5s" }} />
+                  </div>
+                  {steps.map((s, i) => (
+                    <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", fontSize: 13, color: s.done ? "#22C55E" : "#777" }}>
+                      {s.done ? <CheckCircle size={14} color="#22C55E" /> : <div style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid #DDD" }} />}
+                      <span style={{ textDecoration: s.done ? "line-through" : "none" }}>{s.label}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )
           })()}
@@ -1317,7 +1263,7 @@ const [state, setState] = useState(DEFAULT_STATE);
 
             return (
               <div style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: T.caption, color: T.muted, fontWeight: T.bold, marginBottom: 8, letterSpacing: T.lsWide }}>MISSÕES DA SEMANA</div>
+                <div style={{ fontSize: 11, color: "#9B8EBE", fontWeight: 700, marginBottom: 8, letterSpacing: 1 }}>MISSÕES DA SEMANA</div>
                 <div style={card}>
                   {missions.map((m, i) => {
                     const prog = getProgress(m)
@@ -1333,16 +1279,16 @@ const [state, setState] = useState(DEFAULT_STATE);
                           })()}
                         </div>
                         <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: T.sub, fontWeight: T.semi, color: isClaimed ? T.success : T.ink }}>{m.label}</div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: isClaimed ? "#22C55E" : "#333" }}>{m.label}</div>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
                             <div style={{ background: "#F0F0F0", borderRadius: 3, height: 4, flex: 1 }}>
                               <div style={{ background: done ? "#22C55E" : "#7C3AED", height: "100%", borderRadius: 3, width: Math.min(100, Math.max(0, prog) / m.target * 100) + "%", transition: "width 0.5s" }} />
                             </div>
-                            <span style={{ fontSize: T.micro-1, color: T.muted, fontWeight: T.semi, flexShrink: 0 }}>+{m.xp}XP +{m.coins}$</span>
+                            <span style={{ fontSize: 9, color: "#BBB", fontWeight: 600, flexShrink: 0 }}>+{m.xp}XP +{m.coins}$</span>
                           </div>
                         </div>
                         <div style={{ textAlign: "right", flexShrink: 0 }}>
-                          {isClaimed ? <span style={{ fontSize: T.micro, color: T.success, fontWeight: T.semi }}>Coletado</span> : done ? (
+                          {isClaimed ? <span style={{ fontSize: 10, color: "#22C55E", fontWeight: 600 }}>Coletado</span> : done ? (
                             <button onClick={() => {
                               addXp(m.xp, 'Missão: ' + m.label); addCoins(m.coins)
                               setState(prev => {
@@ -1350,8 +1296,8 @@ const [state, setState] = useState(DEFAULT_STATE);
                                 const n = { ...prev, weeklyMissions: { ...curWm, claimed: [...(curWm.claimed || []), m.id] } }
                                 save(n); return n
                               })
-                            }} style={{ padding: "4px 10px", borderRadius: 8, border: "none", background: T.success, color: "#fff", fontSize: T.micro, fontWeight: T.bold, cursor: "pointer" }}>Coletar</button>
-                          ) : <span style={{ fontSize: T.micro, color: T.muted, fontWeight: T.semi }}>{prog}/{m.target}</span>}
+                            }} style={{ padding: "4px 10px", borderRadius: 8, border: "none", background: "#22C55E", color: "#fff", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>Coletar</button>
+                          ) : <span style={{ fontSize: 10, color: "#999", fontWeight: 600 }}>{prog}/{m.target}</span>}
                         </div>
                       </div>
                     )
@@ -1369,8 +1315,8 @@ const [state, setState] = useState(DEFAULT_STATE);
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2" strokeLinecap="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: T.sub, fontWeight: T.bold, color: T.ink }}>Revisão de erros</div>
-                  <div style={{ fontSize: T.caption, color: T.secondary, marginTop: 2 }}>{(state.wrongAnswers || []).length} perguntas pra revisar</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#1E0A3C" }}>Revisão de erros</div>
+                  <div style={{ fontSize: 12, color: "#999", marginTop: 2 }}>{(state.wrongAnswers || []).length} perguntas pra revisar</div>
                 </div>
                 <ArrowRight size={18} color="#EF4444" />
               </div>
@@ -1389,36 +1335,36 @@ const [state, setState] = useState(DEFAULT_STATE);
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <Trophy size={28} color={getLeagueColor(state.league)} />
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: T.body, fontWeight: T.bold, color: T.ink }}>Liga {state.league}</div>
-                    <div style={{ fontSize: T.caption, color: T.secondary, marginTop: 2 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "#1E0A3C" }}>Liga {state.league}</div>
+                    <div style={{ fontSize: 11, color: "#999", marginTop: 2 }}>
                       {myRank > 0 ? `Posição ${myRank}° de ${ranking.length}` : 'Carregando...'}
-                      {isTop && leagueIdx < LEAGUES.length - 1 && <span style={{ color: T.success, fontWeight: T.bold }}> — Zona de promoção!</span>}
-                      {isBottom && leagueIdx > 0 && <span style={{ color: T.danger, fontWeight: T.bold }}> — Zona de rebaixamento</span>}
+                      {isTop && leagueIdx < LEAGUES.length - 1 && <span style={{ color: "#22C55E", fontWeight: 700 }}> — Zona de promoção!</span>}
+                      {isBottom && leagueIdx > 0 && <span style={{ color: "#EF4444", fontWeight: 700 }}> — Zona de rebaixamento</span>}
                     </div>
                   </div>
-                  <div style={{ fontSize: T.caption, fontWeight: T.bold, color: getLeagueColor(state.league) }}>{state.weeklyXp || 0} XP/sem</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: getLeagueColor(state.league) }}>{state.weeklyXp || 0} XP/sem</div>
                 </div>
               </div>
             )
           })()}
 
           {/* ── RANKING ── */}
-          <div style={{ fontSize: T.caption, color: T.muted, fontWeight: T.bold, marginBottom: 8, letterSpacing: T.lsWide }}>RANKING</div>
+          <div style={{ fontSize: 11, color: "#9B8EBE", fontWeight: 700, marginBottom: 8, letterSpacing: 1 }}>RANKING</div>
           <div style={card}>
-            {ranking.length === 0 && <div style={{ textAlign: "center", padding: "16px 0", color: T.muted, fontSize: T.sub }}>Carregando ranking...</div>}
+            {ranking.length === 0 && <div style={{ textAlign: "center", padding: "16px 0", color: "#BBB", fontSize: 13 }}>Carregando ranking...</div>}
             {ranking.slice(0, 10).map((u, i) => {
               const COLORS = ["#7B2FF2","#F59E0B","#22C55E","#EF4444","#3B82F6","#EC4899","#14B8A6","#F97316"];
               const color = u.isMe ? "#7B2FF2" : COLORS[i % COLORS.length];
               return (
                 <div key={u.id} onClick={() => { if (!u.isMe) setProfileModal(u) }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: i < Math.min(ranking.length, 10) - 1 ? "1px solid #F0F0F0" : "none", cursor: u.isMe ? "default" : "pointer" }}>
                   <span style={{ width: 30, display: "flex", justifyContent: "center" }}>
-                    {i < 3 ? <Medal size={28} color={i === 0 ? "#FBBF24" : i === 1 ? "#A1A1AA" : "#D97706"} /> : <span style={{ fontSize: T.sub, fontWeight: T.bold, color: T.disabled }}>{i + 1}</span>}
+                    {i < 3 ? <Medal size={28} color={i === 0 ? "#FBBF24" : i === 1 ? "#A1A1AA" : "#D97706"} /> : <span style={{ fontSize: 14, fontWeight: 700, color: "#CCC" }}>{i + 1}</span>}
                   </span>
-                  <div style={{ width: 30, height: 30, borderRadius: "50%", background: color, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: T.caption, fontWeight: T.bold, overflow: "hidden" }}>
+                  <div style={{ width: 30, height: 30, borderRadius: "50%", background: color, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 12, fontWeight: 700, overflow: "hidden" }}>
                     {u.profilePhoto ? <img src={u.profilePhoto} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : (u.name || 'J')[0].toUpperCase()}
                   </div>
-                  <span style={{ flex: 1, fontSize: T.sub, color: u.isMe ? T.accent : T.ink, fontWeight: u.isMe ? T.bold : T.regular }}>{u.isMe ? (u.name || 'Você') : u.name}</span>
-                  <span style={{ fontSize: T.sub, color: T.secondary, fontWeight: T.regular }}>{u.totalXp.toLocaleString()} XP</span>
+                  <span style={{ flex: 1, fontSize: 14, color: u.isMe ? "#7B2FF2" : "#333", fontWeight: u.isMe ? 700 : 400 }}>{u.isMe ? (u.name || 'Você') : u.name}</span>
+                  <span style={{ fontSize: 13, color: "#999", fontWeight: 500 }}>{u.totalXp.toLocaleString()} XP</span>
                   {!u.isMe && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#CCC" strokeWidth="2" strokeLinecap="round"><path d="M9 18l6-6-6-6"/></svg>}
                 </div>
               );
@@ -1534,18 +1480,17 @@ const [state, setState] = useState(DEFAULT_STATE);
                 {[0,1,2].map(i => <svg key={i} width="32" height="32" viewBox="0 0 16 16"><path d="M8 14s-6-4.35-6-8.5A3.5 3.5 0 018 3.28 3.5 3.5 0 0114 5.5C14 9.65 8 14 8 14z" fill="#E5E5E5" /></svg>)}
               </div>
               <h2 style={{ fontSize: 22, fontWeight: 800, color: "#EF4444", marginBottom: 6 }}>Vidas esgotadas!</h2>
-              <p style={{ fontSize: 14, color: "#888", marginBottom: 8, lineHeight: 1.5 }}>Você errou 3 vezes. Aguarde a regeneração ou compre vidas com moedas.</p>
-              {nextLifeStr && <p style={{ fontSize: 13, color: "#7B2FF2", fontWeight: 600, marginBottom: 20 }}>⏱ Próxima vida em {nextLifeStr}</p>}
+              <p style={{ fontSize: 14, color: "#888", marginBottom: 24, lineHeight: 1.5 }}>Você errou 3 vezes. Revise o conteúdo e tente novamente!</p>
+              <button onClick={() => { restoreAllLives(); setQIdx(0); setSelected(-1); setAnswered(false); setLessonXp(0); setLessonStep("content") }} style={{ ...btn, background: `linear-gradient(135deg,${jColor},${jColor}dd)`, marginBottom: 10, width: "100%" }}>Tentar novamente</button>
               {(state.coins || 0) >= LIVES_CONFIG.buyPrice && (
                 <button onClick={() => {
-                  buyLives()
-                  setQIdx(0); setSelected(-1); setAnswered(false); setLessonXp(0); setLessonStep("content")
+                  setState(prev => { const n = { ...prev, coins: prev.coins - LIVES_CONFIG.buyPrice }; save(n); return n })
+                  restoreAllLives()
                 }} style={{ ...btnOut, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                   <span style={{ fontSize: 12 }}>💰</span> Comprar 3 vidas ({LIVES_CONFIG.buyPrice} moedas)
                 </button>
               )}
-              <button onClick={() => setLessonStep("content")} style={{ marginTop: 10, padding: 12, border: "none", background: "transparent", color: jColor, fontSize: T.sub, fontWeight: T.semi, cursor: "pointer", width: "100%" }}>📖 Reler conteúdo</button>
-              <button onClick={() => setScreen("world")} style={{ marginTop: 4, padding: 12, border: "none", background: "transparent", color: T.muted, fontSize: T.sub, cursor: "pointer", width: "100%" }}>Voltar pra trilha</button>
+              <button onClick={() => setScreen("world")} style={{ marginTop: 10, padding: 12, border: "none", background: "transparent", color: "#999", fontSize: 13, cursor: "pointer", width: "100%" }}>Voltar pra trilha</button>
             </div>
           )}
 
@@ -2337,7 +2282,7 @@ const [state, setState] = useState(DEFAULT_STATE);
           {finTab === "expenses" && <ExpensesScreen
             state={state}
             styles={{ph,card,btn,btnOut,input,NavBar:()=>null}}
-            handlers={{updateExpenseCategory,deleteExpense,handleExcelUpload,handlePdfUpload,handleDetailFatura,confirmPdfImport,togglePdfItem,updatePdfItemCategory,addExpense,toggleOcultar,saveBudgets}}
+            handlers={{updateExpenseCategory,deleteExpense,handleExcelUpload,handlePdfUpload,handleDetailFatura,confirmPdfImport,togglePdfItem,updatePdfItemCategory,addExpense,toggleOcultar}}
             filters={{monthFilter,setMonthFilter,catFilters,setCatFilters,customRange,setCustomRange,showCustomRange,setShowCustomRange,importStep,setImportStep,pdfParsing,pdfPreview,setPdfPreview,showExpenseForm,setShowExpenseForm,expName,setExpName,expAmount,setExpAmount,expCat,setExpCat,expDate,setExpDate,totalExpenses,rendaTotal,filterByMonth}}
             FinTabs={FinTabs}
           />}
@@ -2431,6 +2376,129 @@ const [state, setState] = useState(DEFAULT_STATE);
       {screen === "revisaoSemanal" && <RevisaoSemanalScreen state={state} setState={setState} save={save} addXp={addXp} addCoins={addCoins} onBack={() => setScreen("home")} />}
       {screen === "coach" && <CoachScreen state={state} setState={setState} save={save} onBack={() => setScreen("home")} navigate={navigate} NavBar={NavBar} />}
       {screen === "loja" && <LojaScreen state={state} setState={setState} save={save} loadModel={loadModel} setBackground={setBackground} onBack={() => setScreen("home")} NavBar={NavBar} />}
+
+      {/* ── TOUR GUIADO (tooltips in-app) ── */}
+      {tourStep !== null && (() => {
+        const TOUR = [
+          { title: "Aba Financeiro", desc: "Aqui você controla todo o seu dinheiro. Vamos conhecer cada seção.", screen: "financeiro", tab: "expenses", pos: "nav", navIdx: 3 },
+          { title: "Gastos", desc: "Registre seus gastos manualmente ou importe a fatura do cartão. A Quita categoriza tudo automaticamente.", screen: "financeiro", tab: "expenses", pos: "tab", tabIdx: 0 },
+          { title: "Receitas", desc: "Cadastre sua renda mensal e receitas extras pra ter um retrato completo da sua situação.", screen: "financeiro", tab: "receitas", pos: "tab", tabIdx: 1 },
+          { title: "Dívidas", desc: "Cadastre suas dívidas com valor e juros. A IA vai considerar tudo pra montar seu plano.", screen: "financeiro", tab: "debts", pos: "tab", tabIdx: 2 },
+          { title: "Patrimônio", desc: "Registre seus bens e investimentos pra um raio-x completo.", screen: "financeiro", tab: "patrimonio", pos: "tab", tabIdx: 3 },
+          { title: "Metas", desc: "Crie metas financeiras com prazo e valor. O app acompanha seu progresso.", screen: "financeiro", tab: "goals", pos: "tab", tabIdx: 4 },
+          { title: "Aba Trilha", desc: "Aprenda sobre finanças com lições curtas e gamificadas. Ganhe XP, moedas e suba no ranking.", screen: "world", pos: "nav", navIdx: 1 },
+          { title: "Aba Quita IA", desc: "Sua mentora financeira pessoal. Tem 3 funções que vou te mostrar.", screen: "coach", pos: "nav", navIdx: 2 },
+          { title: "Chat", desc: "Converse sobre suas finanças. A IA conhece todos os seus dados e dá orientações personalizadas.", screen: "coach", pos: "coachTab", coachTabIdx: 0 },
+          { title: "Diagnóstico", desc: "Gera um score de 0 a 100 com base nas suas finanças reais. Mostra seus pontos fortes e o que melhorar.", screen: "coach", pos: "coachTab", coachTabIdx: 1 },
+          { title: "Plano de ação", desc: "A IA monta um plano personalizado com ações concretas pra melhorar suas finanças mês a mês.", screen: "coach", pos: "coachTab", coachTabIdx: 2 },
+          { title: "Aba Início", desc: "Aqui você acompanha missões semanais, ranking e seu progresso. Comece registrando seus gastos!", screen: "home", pos: "nav", navIdx: 0 },
+        ]
+
+        const step = TOUR[tourStep]
+        if (!step) return null
+        const total = TOUR.length
+        const isLast = tourStep === total - 1
+
+        const goToStep = (idx) => {
+          const s = TOUR[idx]
+          if (s.screen) setScreen(s.screen)
+          if (s.tab) setFinTab(s.tab)
+          setTourStep(idx)
+        }
+
+        const next = () => {
+          if (isLast) {
+            setTourStep(null)
+            setState(prev => { const n = { ...prev, tourDone: true }; save(n); return n })
+          } else {
+            goToStep(tourStep + 1)
+          }
+        }
+
+        const skip = () => {
+          setTourStep(null)
+          setScreen("home")
+          setState(prev => { const n = { ...prev, tourDone: true }; save(n); return n })
+        }
+
+        // Posições do tooltip
+        const tooltipStyle = (() => {
+          const base = { position: "fixed", left: 16, right: 16, zIndex: 9999, background: "#fff", borderRadius: 18, padding: "16px 18px", boxShadow: "0 8px 40px rgba(0,0,0,0.2)", animation: "qI 0.25s ease both" }
+          if (step.pos === "tab" || step.pos === "coachTab") return { ...base, top: "calc(var(--sat, 0px) + 140px)" }
+          if (step.pos === "nav") return { ...base, bottom: "calc(var(--sab, 0px) + 75px)" }
+          return { ...base, top: "50%", transform: "translateY(-50%)" }
+        })()
+
+        // Seta apontando pro elemento
+        const arrowEl = (() => {
+          const base = { position: "absolute", width: 0, height: 0, borderLeft: "10px solid transparent", borderRight: "10px solid transparent" }
+
+          if (step.pos === "nav") {
+            const navPositions = [10, 30, 50, 70, 90]
+            const leftPct = step.navIdx !== undefined ? navPositions[step.navIdx] : 50
+            return <div style={{ ...base, bottom: -10, left: `${leftPct}%`, transform: "translateX(-50%)", borderTop: "10px solid #fff" }} />
+          }
+
+          if (step.pos === "tab") {
+            const tabPositions = [10, 28, 48, 68, 88]
+            const leftPct = step.tabIdx !== undefined ? tabPositions[step.tabIdx] : 50
+            return <div style={{ ...base, top: -10, left: `${leftPct}%`, transform: "translateX(-50%)", borderBottom: "10px solid #fff" }} />
+          }
+
+          if (step.pos === "coachTab") {
+            const coachPositions = [20, 50, 80]
+            const leftPct = step.coachTabIdx !== undefined ? coachPositions[step.coachTabIdx] : 50
+            return <div style={{ ...base, top: -10, left: `${leftPct}%`, transform: "translateX(-50%)", borderBottom: "10px solid #fff" }} />
+          }
+
+          return null
+        })()
+
+        return (
+          <>
+            <div onClick={next} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.25)", zIndex: 9998 }} />
+
+            {step.pos === "nav" && step.navIdx !== undefined && (
+              <div style={{
+                position: "fixed", bottom: 0, left: `${step.navIdx * 20}%`, width: "20%",
+                height: "calc(var(--sab, 0px) + 56px)", background: "rgba(124,58,237,0.12)",
+                borderTop: "2px solid #7C3AED", zIndex: 9998, pointerEvents: "none",
+              }} />
+            )}
+
+            <div style={tooltipStyle}>
+              {arrowEl}
+
+              <div style={{ display: "flex", justifyContent: "center", gap: 3, marginBottom: 12 }}>
+                {TOUR.map((_, i) => (
+                  <div key={i} style={{
+                    width: i === tourStep ? 16 : 5, height: 5, borderRadius: 3,
+                    background: i === tourStep ? "#7C3AED" : i < tourStep ? "#C4B5FD" : "#E8E8E8",
+                    transition: "all 0.3s",
+                  }} />
+                ))}
+              </div>
+
+              <div style={{ fontSize: 15, fontWeight: 800, color: "#1E0A3C", marginBottom: 4 }}>{step.title}</div>
+              <div style={{ fontSize: 13, color: "#666", lineHeight: 1.5, marginBottom: 14 }}>{step.desc}</div>
+
+              <div style={{ display: "flex", gap: 8 }}>
+                {!isLast && (
+                  <button onClick={skip} style={{
+                    padding: "10px 16px", borderRadius: 12, border: "1.5px solid #E8E8E8",
+                    background: "#fff", color: "#999", fontSize: 13, fontWeight: 600, cursor: "pointer",
+                  }}>Pular</button>
+                )}
+                <button onClick={next} style={{
+                  flex: 1, padding: "10px 16px", borderRadius: 12, border: "none",
+                  background: "linear-gradient(135deg,#7C3AED,#6D28D9)", color: "#fff",
+                  fontSize: 13, fontWeight: 700, cursor: "pointer",
+                }}>{isLast ? "Começar!" : `Próximo (${tourStep + 1}/${total})`}</button>
+              </div>
+            </div>
+          </>
+        )
+      })()}
 
     </div>
   );

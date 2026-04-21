@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { trackOnboardingStep, trackOnboardingSkipTutorial } from '../services/analytics'
+import { trackOnboardingStep } from '../services/analytics'
 
 const RENDAS = [
   { id: 'ate1500', label: 'Até R$ 1.500', value: 1500 },
@@ -19,45 +19,6 @@ const DIFICULDADES = [
   { id: 'organizar', label: 'Me organizar', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2', desc: 'Não tenho controle das finanças' },
 ]
 
-const TUTORIAL = [
-  {
-    icon: 'M3 12l9-9 9 9M5 10v10a1 1 0 001 1h3a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1h3a1 1 0 001-1V10',
-    color: '#7C3AED',
-    title: 'Início',
-    desc: 'Sua tela principal. Aqui você vê sua Quita 3D, o streak do dia, XP acumulado, missão pendente e atividades semanais. É o ponto de partida pra tudo — complete 1 módulo por dia e acompanhe seu progresso.',
-  },
-  {
-    icon: 'M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5A2.5 2.5 0 006.5 22H20V17H6.5A2.5 2.5 0 004 19.5zM4 19.5V4.5A2.5 2.5 0 016.5 2H20v15',
-    color: '#14B8A6',
-    title: 'Trilha de Lições',
-    desc: 'Seu caminho de aprendizado financeiro. São módulos com 5 lições curtinhas cada — leia o conteúdo, responda o quiz e ganhe XP e moedas. Complete 1 módulo por dia pra manter o streak. A trilha vai desde o básico até investimentos e empreendedorismo.',
-  },
-  {
-    icon: 'M12 3l1.5 3.7 3.8.6-2.7 2.7.6 3.8L12 12l-3.2 1.8.6-3.8L6.7 7.3l3.8-.6zM19 15l.8 1.9 2 .3-1.4 1.4.3 2-1.7-.9-1.7.9.3-2-1.4-1.4 2-.3z',
-    color: '#F59E0B',
-    title: 'Quita IA',
-    desc: 'Sua consultora financeira pessoal. Ela analisa seus dados reais e gera um diagnóstico com 6 dimensões, insights personalizados e um plano de ação com metas de 30 dias, 3 meses e 12 meses. Também tem um chat onde você tira qualquer dúvida financeira.',
-  },
-  {
-    icon: 'M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6',
-    color: '#22C55E',
-    title: 'Financeiro',
-    desc: 'Controle completo da sua vida financeira. Registre gastos (manual, Excel ou PDF), cadastre receitas e dívidas, defina metas de economia e registre seu patrimônio — reserva de emergência e investimentos por classe de ativo. Tudo isso alimenta a Quita IA.',
-  },
-  {
-    icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
-    color: '#3B82F6',
-    title: 'Diagnóstico',
-    desc: 'Um raio-x completo da sua saúde financeira. Mostra quanto da renda está comprometida, nível de endividamento, se sobra dinheiro, reserva de emergência e seu progresso na trilha. Quanto melhor o score, mais perto da liberdade financeira.',
-  },
-  {
-    icon: 'M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4zM3 6h18M16 10a4 4 0 01-8 0',
-    color: '#EC4899',
-    title: 'Loja',
-    desc: 'Ganhe moedas completando lições e atividades. Use pra comprar skins exclusivas pra sua Quita — praia, natal, gamer — e fundos temáticos que mudam o visual do app. Toque nas moedas no topo da Home pra acessar.',
-  },
-]
-
 export default function OnboardingScreen({ onComplete }) {
   const [step, setStep] = useState(0)
   const [name, setName] = useState('')
@@ -66,9 +27,7 @@ export default function OnboardingScreen({ onComplete }) {
   const [dificuldade, setDificuldade] = useState(null)
   const [dailyGoal, setDailyGoal] = useState(null)
 
-  const totalSteps = 5 + TUTORIAL.length // 0-3 data, 4 pronto, 5-9 tutorial
-  const isTutorial = step >= 5
-  const tutorialIdx = step - 5
+  const totalSteps = 5 // 0: nome/idade, 1: renda, 2: dificuldade, 3: meta diária, 4: pronto
 
   const canProceed = step === 0 ? name.trim().length >= 2 && age.trim().length > 0 && parseInt(age) >= 10 && parseInt(age) <= 120
     : step === 1 ? renda !== null
@@ -96,7 +55,7 @@ export default function OnboardingScreen({ onComplete }) {
         {Array.from({ length: totalSteps }).map((_, i) => (
           <div key={i} style={{
             width: i === step ? 20 : 6, height: 6, borderRadius: 3,
-            background: i <= step ? (isTutorial ? TUTORIAL[Math.min(tutorialIdx, TUTORIAL.length - 1)].color : '#A855F7') : 'rgba(255,255,255,0.15)',
+            background: i <= step ? '#A855F7' : 'rgba(255,255,255,0.15)',
             transition: 'all 0.3s',
           }} />
         ))}
@@ -197,39 +156,20 @@ export default function OnboardingScreen({ onComplete }) {
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', textAlign: 'center' }}>
             <img src="/models/quita-ia.png" alt="Quita" style={{ width: 180, height: 180, objectFit: 'contain', margin: '0 auto 20px', display: 'block' }} />
             <div style={{ fontSize: 28, fontWeight: 800, color: '#fff', lineHeight: 1.2, marginBottom: 8 }}>Tudo pronto, {name.split(' ')[0]}!</div>
-            <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.65)', lineHeight: 1.6, marginBottom: 8 }}>Antes de começar, vou te mostrar rapidamente como o app funciona.</div>
+            <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.65)', lineHeight: 1.6, marginBottom: 8 }}>Vou te guiar pelo app pra você conhecer cada funcionalidade.</div>
             <div style={{ margin: '16px auto', padding: '14px 20px', borderRadius: 16, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)', maxWidth: 300 }}>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 6, fontWeight: 600, letterSpacing: 0.5 }}>SEU PLANO PERSONALIZADO</div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', marginBottom: 6, fontWeight: 600, letterSpacing: 0.5 }}>SEU FOCO</div>
               <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.85)', lineHeight: 1.5, fontWeight: 500 }}>
-                {dificuldade === 'dividas' && 'Foco em quitar dívidas e negociar melhores taxas com os bancos.'}
-                {dificuldade === 'gastos' && 'Foco em identificar padrões de gasto e cortar o que não precisa.'}
-                {dificuldade === 'sobrar' && 'Foco em criar uma sobra mensal consistente que vira hábito.'}
-                {dificuldade === 'investir' && 'Foco em preparar o terreno financeiro pra começar a investir.'}
-                {dificuldade === 'reserva' && 'Foco em montar sua reserva de emergência passo a passo.'}
-                {dificuldade === 'organizar' && 'Foco em organizar toda sua vida financeira do zero.'}
+                {dificuldade === 'dividas' && 'Sair das dívidas e negociar melhores taxas.'}
+                {dificuldade === 'gastos' && 'Identificar padrões de gasto e cortar o desnecessário.'}
+                {dificuldade === 'sobrar' && 'Criar uma sobra mensal consistente.'}
+                {dificuldade === 'investir' && 'Preparar o terreno pra começar a investir.'}
+                {dificuldade === 'reserva' && 'Montar sua reserva de emergência.'}
+                {dificuldade === 'organizar' && 'Organizar toda sua vida financeira do zero.'}
               </div>
             </div>
           </div>
         )}
-
-        {/* Steps 5-9: Tutorial slides */}
-        {isTutorial && tutorialIdx < TUTORIAL.length && (() => {
-          const t = TUTORIAL[tutorialIdx]
-          return (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', textAlign: 'center' }}>
-              <div style={{
-                width: 100, height: 100, borderRadius: 28, margin: '0 auto 28px',
-                background: `linear-gradient(135deg, ${t.color}30, ${t.color}15)`,
-                border: `2px solid ${t.color}40`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke={t.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={t.icon} /></svg>
-              </div>
-              <div style={{ fontSize: 26, fontWeight: 800, color: '#fff', marginBottom: 12 }}>{t.title}</div>
-              <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.7)', lineHeight: 1.7, maxWidth: 340, margin: '0 auto' }}>{t.desc}</div>
-            </div>
-          )
-        })()}
 
       </div>
 
@@ -237,19 +177,16 @@ export default function OnboardingScreen({ onComplete }) {
       <div style={{ padding: '16px 24px 36px' }}>
         <button onClick={next} disabled={!canProceed} style={{
           width: '100%', padding: '16px', borderRadius: 16, border: 'none',
-          background: canProceed ? (isTutorial ? `linear-gradient(135deg, ${TUTORIAL[Math.min(tutorialIdx, TUTORIAL.length - 1)].color}, ${TUTORIAL[Math.min(tutorialIdx, TUTORIAL.length - 1)].color}cc)` : 'linear-gradient(135deg, #A855F7, #7C3AED)') : 'rgba(255,255,255,0.08)',
+          background: canProceed ? 'linear-gradient(135deg, #A855F7, #7C3AED)' : 'rgba(255,255,255,0.08)',
           color: canProceed ? '#fff' : 'rgba(255,255,255,0.25)',
           fontSize: 17, fontWeight: 700, cursor: canProceed ? 'pointer' : 'default',
           boxShadow: canProceed ? '0 4px 20px rgba(124,58,237,0.4)' : 'none',
           transition: 'all 0.3s',
         }}>
-          {step === totalSteps - 1 ? 'Começar minha jornada' : step === 4 ? 'Ver como funciona' : isTutorial ? 'Próximo' : 'Continuar'}
+          {step === 4 ? 'Conhecer o app' : 'Continuar'}
         </button>
         {step > 0 && step < 4 && (
           <button onClick={() => setStep(step - 1)} style={{ width: '100%', marginTop: 10, padding: '12px', borderRadius: 14, border: 'none', background: 'transparent', color: 'rgba(255,255,255,0.4)', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Voltar</button>
-        )}
-        {isTutorial && (
-          <button onClick={() => { trackOnboardingSkipTutorial(step); const rendaObj = RENDAS.find(r => r.id === renda); onComplete({ name: name.trim(), income: rendaObj?.value || 0, dificuldade, dailyGoal }) }} style={{ width: '100%', marginTop: 10, padding: '12px', borderRadius: 14, border: 'none', background: 'transparent', color: 'rgba(255,255,255,0.4)', fontSize: 14, fontWeight: 500, cursor: 'pointer' }}>Pular tutorial</button>
         )}
       </div>
     </div>

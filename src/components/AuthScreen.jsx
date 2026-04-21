@@ -52,7 +52,7 @@ export default function AuthScreen({ onAuth }) {
       <div style={{ textAlign: 'center', paddingTop: 'calc(40px + var(--sat, 0px))', paddingBottom: 8 }}>
         <img src="/models/quita-celebrate.png" alt="Quita" style={{ width: 180, height: 180, objectFit: 'contain', margin: '0 auto', display: 'block' }} />
         <div style={{ fontSize: 36, fontWeight: 900, color: '#fff', letterSpacing: -1, marginTop: 4 }}>Quita</div>
-        <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.55)', fontWeight: 500, marginTop: 4 }}>O Duolingo das Finanças</div>
+        <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.55)', fontWeight: 500, marginTop: 4 }}>Sua mentora financeira particular</div>
       </div>
 
       {/* Card form */}

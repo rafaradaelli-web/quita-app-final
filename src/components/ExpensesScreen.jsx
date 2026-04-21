@@ -324,7 +324,7 @@ export default function ExpensesScreen({ state, styles, handlers, filters, FinTa
             <div style={{ fontSize: T.hero, fontWeight: T.bold, letterSpacing: T.lsTitle }}>R$ {totalExpenses.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</div>
           </div>
           <div style={{ display: "flex", gap: 4 }}>
-            {[
+            {state.expenses.filter(e => !e.oculto).length > 0 && [
               { key: "dashboard", label: "Dashboard" },
               { key: "list", label: "Lista" },
               { key: "budget", label: "Orçamento" },
@@ -535,8 +535,7 @@ export default function ExpensesScreen({ state, styles, handlers, filters, FinTa
           <div style={{ fontSize: 40, marginBottom: 12 }}>📊</div>
           <div style={{ fontSize: T.body, fontWeight: T.bold, color: T.ink, marginBottom: 6 }}>Registre seus gastos</div>
           <div style={{ fontSize: T.sub, color: T.secondary, lineHeight: T.relaxed, marginBottom: 20 }}>Importe uma fatura do cartão ou registre manualmente. A Quita categoriza tudo automaticamente.</div>
-          <button onClick={() => setShowExpenseForm(true)} style={{ ...btn, marginBottom: 8 }}>+ Registrar gasto manual</button>
-          <div style={{ fontSize: T.caption, color: T.muted, marginTop: 4 }}>Ou toque em "+ Registrar" acima para importar PDF/Excel</div>
+          <button onClick={() => setRegisterOpen(true)} style={{ ...btn }}>+ Registrar</button>
         </div>}
       </div>
       </div>

@@ -4,6 +4,28 @@ import LESSONS_DATA from '../services/lessons.json'
 const ZIGZAG = [
   { xPct: 50 }, { xPct: 22 }, { xPct: 72 }, { xPct: 18 }, { xPct: 68 },
 ]
+
+// Harmonize journey colors to purple palette variants
+const PURPLE_PALETTE = [
+  '#7C3AED', '#6D28D9', '#8B5CF6', '#A855F7', '#5B21B6',
+  '#4C1D95', '#9333EA', '#7E22CE', '#6B21A8', '#581C87',
+  '#4338CA', '#6366F1', '#818CF8',
+]
+const _colorCache = {}
+const harmonize = (color) => {
+  if (!color || typeof color !== 'string') return '#7C3AED'
+  if (_colorCache[color]) return _colorCache[color]
+  const c = color.toLowerCase()
+  if (c.includes('7c3') || c.includes('6d28') || c.includes('8b5') || c.includes('a855') || c.includes('5b21') || c.includes('4c1d') || c.includes('933') || c.includes('7e22') || c.includes('6b21') || c.includes('581') || c.includes('4338') || c.includes('636') || c.includes('818')) {
+    _colorCache[color] = color
+    return color
+  }
+  let hash = 0
+  for (let i = 0; i < color.length; i++) hash = ((hash << 5) - hash) + color.charCodeAt(i)
+  const idx = Math.abs(hash) % PURPLE_PALETTE.length
+  _colorCache[color] = PURPLE_PALETTE[idx]
+  return PURPLE_PALETTE[idx]
+}
 const NODE = 80, NODE_CUR = 94, ROW_H = 180, HEADER_H = 160
 
 // ── SVG Mini-icons (replace all emojis) ──
@@ -103,18 +125,18 @@ export default function TrilhaScreen({ state, styles, startLesson, NavBar, embed
     et.modules.forEach((mod, mi) => {
       // Inserir baú ANTES deste módulo se a posição bate
       if (chestPositions.has(globalIdx)) {
-        allMods.push({ type: 'chest', id: 'chest-' + globalIdx, ei, eColor: et.color, gi: allMods.length })
+        allMods.push({ type: 'chest', id: 'chest-' + globalIdx, ei, eColor: harmonize(et.color), gi: allMods.length })
       }
       // Inserir desafio ANTES deste módulo
       if (challengePositions.has(globalIdx)) {
-        allMods.push({ type: 'challenge', id: 'challenge-' + ei, ei, eName: et.name, eColor: et.color, gi: allMods.length })
+        allMods.push({ type: 'challenge', id: 'challenge-' + ei, ei, eName: et.name, eColor: harmonize(et.color), gi: allMods.length })
       }
-      allMods.push({ ...mod, type: 'module', ei, eName: et.name, eSub: et.subtitle || '', eColor: et.color, eIcon: et.icon, mi, gi: allMods.length })
+      allMods.push({ ...mod, type: 'module', ei, eName: et.name, eSub: et.subtitle || '', eColor: harmonize(et.color), eIcon: et.icon, mi, gi: allMods.length })
       globalIdx++
     })
     // Checkpoint no final de cada jornada (exceto a última)
     if (ei < journeys.length - 1) {
-      allMods.push({ type: 'checkpoint', id: 'checkpoint-' + ei, ei, eName: et.name, eColor: et.color, gi: allMods.length })
+      allMods.push({ type: 'checkpoint', id: 'checkpoint-' + ei, ei, eName: et.name, eColor: harmonize(et.color), gi: allMods.length })
     }
   })
 
@@ -248,12 +270,12 @@ export default function TrilhaScreen({ state, styles, startLesson, NavBar, embed
         <div style={{ position:'relative' }}>
           <button onClick={() => setSelOpen(!selOpen)} style={{
             width:'100%', padding:'10px 14px', borderRadius:14,
-            background: `linear-gradient(135deg,${curEtapa.color}18,${curEtapa.color}08)`,
-            border: `1.5px solid ${curEtapa.color}25`,
+            background: `linear-gradient(135deg,${harmonize(curEtapa.color)}18,${harmonize(curEtapa.color)}08)`,
+            border: `1.5px solid ${harmonize(curEtapa.color)}25`,
             display:'flex', alignItems:'center', gap:10, cursor:'pointer',
           }}>
-            <div style={{ width:28,height:28,borderRadius:8,background:`${curEtapa.color}20`,display:'flex',alignItems:'center',justifyContent:'center' }}>
-              <Icon name={curEtapa.icon} size={14} color={curEtapa.color} />
+            <div style={{ width:28,height:28,borderRadius:8,background:`${harmonize(curEtapa.color)}20`,display:'flex',alignItems:'center',justifyContent:'center' }}>
+              <Icon name={curEtapa.icon} size={14} color={harmonize(curEtapa.color)} />
             </div>
             <div style={{ flex:1,textAlign:'left' }}>
               <div style={{ fontSize:14,fontWeight:700,color:'#1E0A3C' }}>{curEtapaIdx + 1} – {curEtapa.name}</div>
@@ -278,11 +300,11 @@ export default function TrilhaScreen({ state, styles, startLesson, NavBar, embed
                 return (
                   <div key={j.id} onClick={() => scrollToEtapa(i)} style={{
                     display:'flex',alignItems:'center',gap:10,padding:'12px 14px',cursor:'pointer',
-                    background: active ? `${j.color}10` : 'transparent',
+                    background: active ? `${harmonize(j.color)}10` : 'transparent',
                     borderBottom: i < journeys.length - 1 ? '1px solid #F0F0F0' : 'none',
                   }}>
-                    <div style={{ width:28,height:28,borderRadius:8,background: locked ? '#F5F5F5' : `${j.color}15`,display:'flex',alignItems:'center',justifyContent:'center' }}>
-                      {locked ? <Icon name="lock" size={13} color="#CCC" /> : complete ? <Icon name="check" size={13} color="#16A34A" /> : <Icon name={j.icon} size={13} color={j.color} />}
+                    <div style={{ width:28,height:28,borderRadius:8,background: locked ? '#F5F5F5' : `${harmonize(j.color)}15`,display:'flex',alignItems:'center',justifyContent:'center' }}>
+                      {locked ? <Icon name="lock" size={13} color="#CCC" /> : complete ? <Icon name="check" size={13} color="#16A34A" /> : <Icon name={j.icon} size={13} color={harmonize(j.color)} />}
                     </div>
                     <div style={{ flex:1 }}>
                       <div style={{ fontSize:13,fontWeight:600,color: locked ? '#BBB' : '#333' }}>
@@ -290,7 +312,7 @@ export default function TrilhaScreen({ state, styles, startLesson, NavBar, embed
                       </div>
                       {j.subtitle && <div style={{ fontSize:10,color: locked ? '#DDD' : '#999',marginTop:2 }}>{j.subtitle}</div>}
                     </div>
-                    <div style={{ fontSize:10,fontWeight:600,color: complete ? '#16A34A' : locked ? '#DDD' : `${j.color}88` }}>
+                    <div style={{ fontSize:10,fontWeight:600,color: complete ? '#16A34A' : locked ? '#DDD' : `${harmonize(j.color)}88` }}>
                       {complete ? 'Completo' : `${jD}/${jT}`}
                     </div>
                   </div>
@@ -312,7 +334,7 @@ export default function TrilhaScreen({ state, styles, startLesson, NavBar, embed
           const ms = allMods.filter(m => m.ei === ei)
           if (!ms.length) return null
           const fy = getY(ms[0].gi), ly = getY(ms[ms.length - 1].gi)
-          return <div key={`bg-${ei}`} style={{ position:'absolute',left:0,right:0,top:fy-70,height:ly-fy+ROW_H+80, background:`linear-gradient(180deg,${et.color}05 0%,${et.color}0a 50%,${et.color}03 100%)`,pointerEvents:'none' }} />
+          return <div key={`bg-${ei}`} style={{ position:'absolute',left:0,right:0,top:fy-70,height:ly-fy+ROW_H+80, background:`linear-gradient(180deg,${harmonize(et.color)}05 0%,${harmonize(et.color)}0a 50%,${harmonize(et.color)}03 100%)`,pointerEvents:'none' }} />
         })}
 
         {/* Etapa headers — positioned above first module with margin */}
@@ -327,21 +349,21 @@ export default function TrilhaScreen({ state, styles, startLesson, NavBar, embed
               style={{ position:'absolute',left:16,right:16,top:y,zIndex:5 }}>
               <div style={{
                 padding:'14px 18px',borderRadius:18,
-                background: locked ? 'rgba(0,0,0,0.02)' : `${et.color}10`,
-                border:`1px solid ${et.color}${locked?'08':'18'}`,
+                background: locked ? 'rgba(0,0,0,0.02)' : `${harmonize(et.color)}10`,
+                border:`1px solid ${harmonize(et.color)}${locked?'08':'18'}`,
                 opacity: locked ? 0.45 : 1,
               }}>
                 <div style={{ display:'flex',alignItems:'flex-start',gap:12 }}>
-                  <div style={{ width:36,height:36,borderRadius:11,flexShrink:0, background: locked ? 'rgba(0,0,0,0.04)' : `${et.color}18`, display:'flex',alignItems:'center',justifyContent:'center',marginTop:2 }}>
-                    {locked ? <Icon name="lock" size={16} color="#BBB" /> : <Icon name={et.icon} size={16} color={et.color} />}
+                  <div style={{ width:36,height:36,borderRadius:11,flexShrink:0, background: locked ? 'rgba(0,0,0,0.04)' : `${harmonize(et.color)}18`, display:'flex',alignItems:'center',justifyContent:'center',marginTop:2 }}>
+                    {locked ? <Icon name="lock" size={16} color="#BBB" /> : <Icon name={et.icon} size={16} color={harmonize(et.color)} />}
                   </div>
                   <div style={{ flex:1,minWidth:0 }}>
-                    <div style={{ fontSize:18,fontWeight:800,color: locked ? '#999' : et.color,lineHeight:1.25,wordWrap:'break-word',overflowWrap:'break-word' }}>
+                    <div style={{ fontSize:18,fontWeight:800,color: locked ? '#999' : harmonize(et.color),lineHeight:1.25,wordWrap:'break-word',overflowWrap:'break-word' }}>
                       {ei+1} – {et.name}
                     </div>
-                    {et.subtitle && <div style={{ fontSize:12,color: locked ? '#BBB' : `${et.color}80`,marginTop:3,fontWeight:500 }}>{et.subtitle}</div>}
+                    {et.subtitle && <div style={{ fontSize:12,color: locked ? '#BBB' : `${harmonize(et.color)}80`,marginTop:3,fontWeight:500 }}>{et.subtitle}</div>}
                   </div>
-                  <div style={{ fontSize:11,fontWeight:600,color: locked ? '#CCC' : `${et.color}66`,flexShrink:0,marginTop:4 }}>{eD}/{eT}</div>
+                  <div style={{ fontSize:11,fontWeight:600,color: locked ? '#CCC' : `${harmonize(et.color)}66`,flexShrink:0,marginTop:4 }}>{eD}/{eT}</div>
                 </div>
               </div>
             </div>

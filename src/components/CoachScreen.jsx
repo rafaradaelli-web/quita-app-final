@@ -806,7 +806,23 @@ Responda APENAS JSON válido sem markdown:
   if (!_hasDebts) missingItems.push({label:'Dívidas', desc:'Cadastre ou marque "Não tenho dívidas"', screen:'debts'})
   if (!_hasPatrimonio) missingItems.push({label:'Patrimônio', desc:'Informe reserva/investimentos ou marque que não tem', screen:'patrimonio'})
 
-  const LockMessage = () => (
+  const LockMessage = () => {
+    // If on Plano tab and data is ready but no diagnostic yet, show different message
+    if (tab === 'plano' && dataReady && !savedDiag) {
+      return (
+        <div style={{padding:'40px 24px',textAlign:'center'}}>
+          <div style={{width:80,height:80,borderRadius:24,background:'linear-gradient(135deg,#F5F3FF,#EDE9FE)',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 20px'}}>
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="1.5" strokeLinecap="round"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+          </div>
+          <div style={{fontSize:18,fontWeight:800,color:'#1A0A2E',marginBottom:6}}>Primeiro, gere seu diagnóstico</div>
+          <div style={{fontSize:13,color:'#888',lineHeight:1.6,marginBottom:20}}>O plano de ação é criado a partir do seu diagnóstico financeiro. Gere ele primeiro na aba Diagnóstico.</div>
+          <button onClick={()=>setTab('diagnostico')} style={{padding:'12px 24px',borderRadius:14,border:'none',background:'linear-gradient(160deg,#1E0A3C,#3B1578,#6D28D9)',color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer',boxShadow:'0 4px 16px rgba(30,10,60,0.35)'}}>
+            Ir para Diagnóstico
+          </button>
+        </div>
+      )
+    }
+    return (
     <div style={{padding:'40px 24px',textAlign:'center'}}>
       <div style={{width:80,height:80,borderRadius:24,background:'#F5F3FF',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 20px'}}>
         <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="1.5" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
@@ -828,7 +844,7 @@ Responda APENAS JSON válido sem markdown:
         ))}
       </div>
     </div>
-  )
+  )}
 
   return (
     <div style={{background:'#F0EDF8',height:'100vh',overflow:'hidden',display:'flex',flexDirection:'column',fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"}}>
@@ -840,7 +856,7 @@ Responda APENAS JSON válido sem markdown:
         </div>
         <div style={{display:'flex',gap:3,background:'rgba(0,0,0,0.2)',borderRadius:12,padding:3}}>
           {[{id:'chat',label:'Chat'},{id:'diagnostico',label:'Diagnóstico'},{id:'plano',label:'Plano'}].map(t=>{
-            const locked = (t.id === 'diagnostico' || t.id === 'plano') && !dataReady
+            const locked = (t.id === 'diagnostico' && !dataReady) || (t.id === 'plano' && (!dataReady || !savedDiag))
             return (
               <button key={t.id} onClick={()=>{ setTab(t.id) }} style={{flex:1,padding:8,borderRadius:10,border:'none',fontSize:T.caption,fontWeight:T.semi,background:tab===t.id?'rgba(255,255,255,0.15)':'transparent',color:locked&&tab!==t.id?T.onDarkMuted:tab===t.id?T.onDark:T.onDarkSub,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:4}}>
                 {locked && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={tab===t.id?"rgba(255,255,255,0.7)":"rgba(255,255,255,0.35)"} strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>}
@@ -854,6 +870,8 @@ Responda APENAS JSON válido sem markdown:
       {/* Lock message */}
       {(tab === 'diagnostico' || tab === 'plano') && !dataReady && <div style={{flex:1,overflowY:'auto'}}><LockMessage /></div>}
       {(tab === 'diagnostico' || tab === 'plano') && !dataReady && NavBar && <NavBar />}
+      {tab === 'plano' && dataReady && !savedDiag && <div style={{flex:1,overflowY:'auto'}}><LockMessage /></div>}
+      {tab === 'plano' && dataReady && !savedDiag && NavBar && <NavBar />}
 
       {/* TAB: Diagnóstico */}
       {tab === 'diagnostico' && dataReady && !savedDiag && (
@@ -981,7 +999,7 @@ Responda APENAS JSON válido sem markdown:
       )}
 
       {/* TAB: Plano de Ação */}
-      {tab === 'plano' && dataReady && (
+      {tab === 'plano' && dataReady && savedDiag && (
         <>
         <div style={{flex:1,overflowY:'auto'}}>
         <div style={{padding:'16px 16px 100px'}}>
