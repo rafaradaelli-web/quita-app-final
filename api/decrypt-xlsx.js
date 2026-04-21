@@ -2,10 +2,9 @@
 // Recebe Excel criptografado + senha via POST JSON (base64) e devolve Excel limpo (base64).
 // Protege CPU/rede com limite de 10MB no body.
 
-const officeCrypto = require('officecrypto-tool');
+import officeCrypto from 'officecrypto-tool';
 
-module.exports = async function handler(req, res) {
-  // CORS básico (mesma origem no Vercel, mas deixa preparado)
+export default async function handler(req, res) {
   res.setHeader('Content-Type', 'application/json');
 
   if (req.method !== 'POST') {
@@ -68,10 +67,10 @@ module.exports = async function handler(req, res) {
     console.error('[decrypt-xlsx] error:', err);
     return res.status(500).json({ error: 'internal', detail: String(err.message || err) });
   }
-};
+}
 
 // Aumenta o limite de body do Vercel (default é ~1MB)
-module.exports.config = {
+export const config = {
   api: {
     bodyParser: {
       sizeLimit: '10mb',
