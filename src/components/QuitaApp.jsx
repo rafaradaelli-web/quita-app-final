@@ -622,12 +622,70 @@ const [state, setState] = useState(DEFAULT_STATE);
     const { type } = filePasswordModal;
 
     if (type === 'excel') {
-      const result = tryReadExcel(filePasswordModal.buffer, filePassword);
-      if (result === 'needs_password') {
-        setToast("Senha incorreta"); setTimeout(() => setToast(null), 2500);
-        return;
+      // Como a lib xlsx (Community Edition) não descriptografa Excel protegido,
+      // mandamos o arquivo + senha pro Claude via API (que consegue ler arquivos protegidos
+      // quando a senha vem no prompt). Mesma abordagem usada para PDF com senha.
+      try {
+        setToast("Desbloqueando Excel..."); setTimeout(() => setToast(null), 8000);
+        const buf = filePasswordModal.buffer;
+        const base64 = btoa(new Uint8Array(buf).reduce((s, b) => s + String.fromCharCode(b), ''));
+        const senhaInformada = filePassword;
+
+        setFilePasswordModal(null); setFilePassword('');
+        setImportStep("pdf-loading"); setPdfParsing(true);
+
+        const response = await fetch("/api/claude", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-20250514", max_tokens: 4000,
+            messages: [{ role: "user", content: [
+              { type: "document", source: { type: "base64", media_type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", data: base64 } },
+              { type: "text", text: 'Este é um arquivo Excel protegido por senha. A senha é: "' + senhaInformada + '". Use essa senha para abrir o arquivo e extraia TODOS os gastos/compras individuais.\n\nResponda APENAS com JSON válido:\n{"expenses":[{"name":"descrição curta","amount":99.90,"category":"Categoria","date":"2026-01-15"}]}\n\nCategorias: Moradia, Alimentação, Delivery, Transporte, Saúde, Estilo de vida, Assinaturas, Educação, Impostos, Outros\n- amount SEMPRE positivo e SEMPRE em REAIS (BRL)\n- COMPRAS INTERNACIONAIS: se a compra está em moeda estrangeira (US$, EUR, etc), use o valor TOTAL convertido em reais (R$), não o valor na moeda original. Use sempre o valor total da compra em R$. Linhas que mostram apenas a cotação/câmbio não são gastos e devem ser ignoradas.\n- date formato YYYY-MM-DD\n- Ignore saldos, juros, IOF, cotação de moeda, transferências recebidas, pagamentos de fatura anterior\n- Se a senha estiver incorreta ou o arquivo não puder ser lido, responda: {"error":"senha_incorreta"}\n- Se não encontrar gastos: {"expenses":[]}' }
+            ]}]
+          })
+        });
+        const data = await response.json();
+        setPdfParsing(false);
+
+        if (!response.ok || data.error) {
+          const errMsg = String(data.error?.message || '').toLowerCase();
+          console.error('[Quita] Excel API error:', data.error);
+          if (errMsg.includes('password') || errMsg.includes('encrypt') || errMsg.includes('could not process')) {
+            setToast("Senha incorreta. Tente novamente.");
+            setTimeout(() => setToast(null), 3000);
+            setFilePassword('');
+            setFilePasswordModal({ type: 'excel', buffer: buf });
+            setImportStep(null);
+            return;
+          }
+          setToast(data.error?.message || "Erro ao processar Excel"); setTimeout(() => setToast(null), 3000); setImportStep(null);
+          return;
+        }
+
+        const text = data.content?.map(c => c.text || '').join('') || '';
+        const match = text.match(/\{[\s\S]*\}/);
+        if (match) {
+          const parsed = JSON.parse(match[0]);
+          // Claude pode sinalizar senha incorreta no próprio JSON
+          if (parsed.error === 'senha_incorreta') {
+            setToast("Senha incorreta. Tente novamente."); setTimeout(() => setToast(null), 3000);
+            setFilePassword('');
+            setFilePasswordModal({ type: 'excel', buffer: buf });
+            setImportStep(null);
+            return;
+          }
+          if (parsed.expenses?.length > 0) {
+            setPdfPreview(parsed.expenses.map(exp => ({ ...exp, amount: Math.abs(parseFloat(exp.amount)) || 0, selected: true, category: exp.category || "Outros" })));
+            setImportStep("pdf-preview");
+          } else { setToast("Nenhum gasto encontrado"); setTimeout(() => setToast(null), 2500); setImportStep(null); }
+        } else { setToast("Erro ao processar resposta"); setTimeout(() => setToast(null), 2500); setImportStep(null); }
+      } catch (err) {
+        setPdfParsing(false);
+        console.error('[Quita] Excel password error:', err);
+        setToast("Erro ao ler Excel: " + (err.message || '')); setTimeout(() => setToast(null), 3000);
+        setImportStep(null);
       }
-      setFilePasswordModal(null); setFilePassword('');
+      return;
     }
 
     if (type === 'pdf') {
