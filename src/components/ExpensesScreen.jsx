@@ -353,7 +353,7 @@ export default function ExpensesScreen({ state, styles, handlers, filters, FinTa
       </div>
       <div style={{ flex: 1, overflowY: "auto" }}>
       <div style={{ padding: 16 }}>
-        <div style={{ position: "relative", marginBottom: 10 }}>
+        {state.expenses.length > 0 && <div style={{ position: "relative", marginBottom: 10 }}>
           <button style={{ ...btn, width: "100%", fontSize: 14, padding: "12px 8px" }} onClick={() => setRegisterOpen(!registerOpen)}>+ Registrar</button>
           {registerOpen && <>
             <div onClick={() => setRegisterOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 30 }} />
@@ -374,7 +374,7 @@ export default function ExpensesScreen({ state, styles, handlers, filters, FinTa
               </label>
             </div>
           </>}
-        </div>
+        </div>}
         {importStep === "pdf-loading" && <div style={{ ...card, padding: 24, textAlign: "center" }}><div style={{ width: 56, height: 56, border: "4px solid #EDE9FE", borderTop: "4px solid #7B2FF2", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 8px" }} />
       <div style={{ fontSize: 15, fontWeight: 600, color: "#333", marginBottom: 4 }}>Analisando...</div><div style={{ fontSize: 13, color: "#999" }}>A Quita está lendo seus dados</div></div>}
         {importStep === "pdf-preview" && pdfPreview && <div style={{ ...card, padding: 20 }}>
