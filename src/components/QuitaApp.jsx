@@ -522,15 +522,86 @@ const [state, setState] = useState(DEFAULT_STATE);
     setPdfParsing(false);
   };
 
-  const tryReadExcel = (arrayBuffer, password) => {
+  // Detecta fatura BTG e usa parser determinístico (datas corretas, sem alucinação da AI).
+  // Categorização continua via Claude, mas só com descrição+valor (sem chance de inventar data).
+  const processarFaturaBTG = async (file) => {
+    setPdfParsing(true); setImportStep("pdf-loading");
+    try {
+      const { parseFaturaExcel } = await import('../services/parseFaturaExcel');
+      const { transacoes, avisos } = await parseFaturaExcel(file);
+
+      if (transacoes.length === 0) {
+        setToast("Nenhuma transação encontrada na fatura");
+        setTimeout(() => setToast(null), 2500);
+        setImportStep(null); setPdfParsing(false); return;
+      }
+
+      const catDict = state.catDict || {};
+      const dictEntries = Object.entries(catDict).slice(-30);
+      const dictStr = dictEntries.length > 0
+        ? '\n\nCATEGORIZAÇÃO APRENDIDA:\n' + dictEntries.map(([k, v]) => `"${k}" → ${v}`).join(', ')
+        : '';
+
+      const itens = transacoes.map((t, i) => `${i}: ${t.descricao} | R$ ${t.valor.toFixed(2)}`).join('\n');
+      const prompt = `Categorize cada item em UMA das categorias: Moradia, Alimentação, Delivery, Transporte, Saúde, Estilo de vida, Assinaturas, Educação, Impostos, Outros.${dictStr}\n\nResponda APENAS com JSON: {"cats":["Categoria1","Categoria2",...]} na MESMA ORDEM dos itens.\n\nItens:\n${itens}`;
+
+      const response = await fetch("/api/claude", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 4000, messages: [{ role: "user", content: prompt }] })
+      });
+      const data = await response.json();
+
+      let cats = [];
+      try {
+        const text = data.content?.map(c => c.text || "").join("") || "";
+        const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
+        cats = parsed.cats || [];
+      } catch (_) { /* se falhar, vai tudo pra "Outros" */ }
+
+      const preview = transacoes.map((t, i) => ({
+        id: Date.now() + i,
+        name: t.descricao,
+        amount: t.valor,
+        category: CATEGORIES.includes(cats[i]) ? cats[i] : "Outros",
+        date: t.data.toISOString().slice(0, 10),
+        selected: true,
+      }));
+
+      setPdfPreview(preview);
+      setImportStep("pdf-preview");
+
+      if (avisos.length > 0) {
+        setToast(`${avisos.length} linha(s) ignoradas (data ou valor inválido)`);
+        setTimeout(() => setToast(null), 4000);
+      }
+    } catch (err) {
+      console.error(err);
+      setToast("Erro ao processar fatura: " + (err.message || ""));
+      setTimeout(() => setToast(null), 4000);
+      setImportStep(null);
+    }
+    setPdfParsing(false);
+  };
+
+  const tryReadExcel = (arrayBuffer, password, file) => {
     try {
       const opts = { type: "array" };
       if (password) opts.password = password;
       const wb = XLSX.read(arrayBuffer, opts);
       const ws = wb.Sheets[wb.SheetNames[0]];
       const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
-      if (raw.length < 2) { setToast("Planilha vazia"); setTimeout(() => setToast(null), 2500); return; }
-      sendToAI(raw.map(row => row.filter(c => String(c).trim()).join(" | ")).filter(l => l.trim().length > 3).slice(0, 200).join("\n"), false);
+      if (raw.length < 2) { setToast("Planilha vazia"); setTimeout(() => setToast(null), 2500); return 'ok'; }
+
+      // Detecta fatura BTG pelo cabeçalho ("Fatura Cartão de Crédito" + "Vencimento")
+      const topo = raw.slice(0, 20).flat().map(c => String(c).toLowerCase()).join(' ');
+      const ehFaturaBTG = /fatura.*cart[aã]o.*cr[ée]dito/.test(topo) && /vencimento/.test(topo);
+
+      if (ehFaturaBTG && file) {
+        processarFaturaBTG(file);
+      } else {
+        sendToAI(raw.map(row => row.filter(c => String(c).trim()).join(" | ")).filter(l => l.trim().length > 3).slice(0, 200).join("\n"), false);
+      }
     } catch (err) {
       const msg = String(err.message || err).toLowerCase();
       if (msg.includes('password') || msg.includes('encrypt') || msg.includes('cfb')) {
@@ -546,10 +617,10 @@ const [state, setState] = useState(DEFAULT_STATE);
     const reader = new FileReader();
     reader.onload = (evt) => {
       const buf = evt.target.result;
-      const result = tryReadExcel(buf);
+      const result = tryReadExcel(buf, null, file);
       if (result === 'needs_password') {
         setFilePassword('');
-        setFilePasswordModal({ type: 'excel', buffer: buf });
+        setFilePasswordModal({ type: 'excel', buffer: buf, file });
       }
     };
     reader.readAsArrayBuffer(file);
@@ -654,7 +725,7 @@ const [state, setState] = useState(DEFAULT_STATE);
         for (let i = 0; i < decBinary.length; i++) decBytes[i] = decBinary.charCodeAt(i);
 
         // Agora lê o Excel já descriptografado usando o tryReadExcel normal (sem senha)
-        const result = tryReadExcel(decBytes.buffer);
+        const result = tryReadExcel(decBytes.buffer, null, filePasswordModal.file);
         if (result === 'needs_password') {
           // Não deveria acontecer, mas por segurança
           setToast("Arquivo continua protegido. Tente novamente."); setTimeout(() => setToast(null), 3000);
