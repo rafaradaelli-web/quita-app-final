@@ -33,9 +33,7 @@ import * as XLSX from 'xlsx';
 export async function parseFaturaExcel(input, options = {}) {
   const {
     parcelaModo = 'vencimento', // 'vencimento' | 'original'
-                                // 'vencimento': parcelas X>1 caem no dia do vencimento da fatura (recomendado, reflete fluxo de caixa real)
-                                // 'original':   mantém a data da compra (preserva histórico)
-                                // Em ambos os casos, a data original fica em origem.dataOriginalCompra.
+    incluirReceitas = false,    // se true, importa valores positivos também (raro pra app de gastos)
   } = options;
   let { dataVencimento } = options;
 
@@ -89,7 +87,17 @@ export async function parseFaturaExcel(input, options = {}) {
     };
   }
 
-  // 6) Iterar linhas e extrair transações
+  // 6.5) Detectar se a planilha é "extrato" (tem positivos E negativos misturados) ou "fatura" (tudo um sinal só).
+  // Isso decide se filtramos receitas automaticamente.
+  let temPositivo = false, temNegativo = false;
+  for (let k = 0; k < Math.min(dataRows.length, 50); k++) {
+    const v = parsearValor((dataRows[k] || [])[colunas.colValor]);
+    if (v !== null) { if (v > 0) temPositivo = true; if (v < 0) temNegativo = true; }
+    if (temPositivo && temNegativo) break;
+  }
+  const ehExtrato = temPositivo && temNegativo;
+
+  // 7) Iterar linhas e extrair transações
   const transacoes = [];
   const avisos = [];
   let i = 0;
@@ -107,6 +115,7 @@ export async function parseFaturaExcel(input, options = {}) {
     let dataRaw = row[colunas.colData];
     let descRaw = String(row[colunas.colDesc] ?? '').trim();
     const valorRaw = row[colunas.colValor];
+    const operacaoRaw = colunas.colOperacao >= 0 ? String(row[colunas.colOperacao] ?? '').trim() : '';
     const tipoRaw = colunas.colTipo >= 0 ? String(row[colunas.colTipo] ?? '').trim() : '';
 
     // 7a) Concatena descrições multi-linha (próxima linha sem data nem valor)
@@ -128,7 +137,23 @@ export async function parseFaturaExcel(input, options = {}) {
       }
     }
 
-    // 7b) Pula se faltam dados essenciais
+    // 7b) Pula linhas que são saldo diário/inicial/final/atual (lixo de extrato bancário)
+    if (/^saldo\s+(di[áa]rio|do\s+dia|atual|final|inicial|anterior|do\s+m[êe]s)/i.test(descRaw) ||
+        /^saldo$/i.test(descRaw) ||
+        /^saldo\s+(di[áa]rio|do\s+dia|atual|final|inicial|anterior)/i.test(operacaoRaw)) {
+      i++;
+      continue;
+    }
+
+    // 7b.5) Pula re-cabeçalhos (alguns bancos repetem o header em cada página)
+    const dataStr = String(dataRaw).trim().toLowerCase();
+    if (/^(data|dt\.?|date|dia|histórico|período|cliente|cpf|agência|conta|saldo|lançamentos|extrato)/i.test(dataStr) &&
+        !/\d/.test(dataStr)) {
+      i++;
+      continue;
+    }
+
+    // 7c) Pula se faltam dados essenciais
     const semData = dataRaw === '' || dataRaw === null || dataRaw === undefined;
     const semValor = valorRaw === '' || valorRaw === null || valorRaw === undefined;
     if (semData && semValor) { i++; continue; }
@@ -138,7 +163,7 @@ export async function parseFaturaExcel(input, options = {}) {
       continue;
     }
 
-    // 7c) Parse defensivo
+    // 7d) Parse defensivo
     const dataCompra = parsearData(dataRaw, dataVencimento);
     if (!dataCompra) {
       avisos.push({ linha: linhaPlanilha, motivo: 'data_invalida', dataRaw, descRaw });
@@ -147,11 +172,18 @@ export async function parseFaturaExcel(input, options = {}) {
 
     const valor = parsearValor(valorRaw);
     if (valor === null || valor === 0) {
-      avisos.push({ linha: linhaPlanilha, motivo: 'valor_invalido', valorRaw, descRaw });
+      // Valor 0 acontece em saldos diários — não é aviso, é só pular
+      if (valor !== 0) avisos.push({ linha: linhaPlanilha, motivo: 'valor_invalido', valorRaw, descRaw });
       i++; continue;
     }
 
-    // 7d) Detectar parcela "(X/Y)"
+    // 7e) Filtrar receitas se for extrato e não quiser receitas
+    const ehReceita = valor > 0;
+    if (ehExtrato && ehReceita && !incluirReceitas) {
+      i++; continue;
+    }
+
+    // 7f) Detectar parcela "(X/Y)" — só pra fatura de cartão
     const matchParcela = descRaw.match(/\((\d+)\/(\d+)\)/);
     let dataFinal = dataCompra;
     let metaParcela = null;
@@ -169,15 +201,23 @@ export async function parseFaturaExcel(input, options = {}) {
       }
     }
 
+    // 7g) Construir descrição com contexto (concatena Operação + Descrição quando faz sentido)
+    let descricaoFinal = descRaw;
+    if (operacaoRaw && !descRaw.toLowerCase().includes(operacaoRaw.toLowerCase())) {
+      descricaoFinal = `${operacaoRaw} - ${descRaw}`;
+    }
+
     transacoes.push({
       data: toLocalISO(dataFinal),
-      descricao: descRaw,
+      descricao: descricaoFinal,
       valor: Math.abs(valor), // app trabalha com gastos positivos
       tipo: tipoRaw,
+      ehReceita, // marcador útil pro front diferenciar visualmente
       parcela: metaParcela,
       origem: {
         linha: linhaPlanilha,
         dataOriginalCompra: toLocalISO(dataCompra),
+        operacao: operacaoRaw || null,
       },
     });
 
@@ -191,6 +231,7 @@ export async function parseFaturaExcel(input, options = {}) {
       total: transacoes.reduce((s, t) => s + t.valor, 0),
       qtdTransacoes: transacoes.length,
       qtdAvisos: avisos.length,
+      tipoPlanilha: ehExtrato ? 'extrato' : 'fatura',
       dataVencimento: dataVencimento ? toLocalISO(dataVencimento) : null,
       colunasDetectadas: colunas,
     },
@@ -214,6 +255,9 @@ function parsearValor(raw) {
 
   let str = String(raw).trim();
   if (!str) return null;
+
+  // Rejeita strings que parecem data/hora (têm '/' ou ':' que não são separadores válidos de número)
+  if (/\d\/\d/.test(str) || /\d:\d/.test(str)) return null;
 
   // Limpa símbolos e espaços
   str = str.replace(/r\$|reais?|brl|usd|us\$|\$/gi, '').replace(/\s/g, '');
@@ -292,6 +336,17 @@ function parsearData(raw, dataReferencia = null) {
     return validarData(d, parseInt(m[3]), parseInt(m[2])) ? d : null;
   }
 
+  // DD/MM/AAAA HH:MM ou DD/MM/AAAA HH:MM:SS (hora ignorada)
+  m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s+\d{1,2}:\d{2}(?::\d{2})?$/);
+  if (m) {
+    let ano = parseInt(m[3], 10);
+    if (ano < 100) ano += ano < 70 ? 2000 : 1900;
+    const dia = parseInt(m[1], 10);
+    const mes = parseInt(m[2], 10);
+    const d = new Date(ano, mes - 1, dia, 12, 0, 0);
+    return validarData(d, dia, mes) ? d : null;
+  }
+
   // DD/MM ou DD/MM/AAAA ou DD/MM/AA
   m = str.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
   if (m) {
@@ -347,7 +402,7 @@ function localizarTabela(rows) {
     const row = (rows[i] || []).map(c => String(c).toLowerCase().trim());
 
     const hasData = row.some(c =>
-      /^(data|dt|date|dia|venc(?:imento)?|movimento|movimentação|d\.\s*lan(?:c|ç)am)/i.test(c)
+      /^(data\s*e?\s*hora|data|dt|date|dia|venc(?:imento)?|movimento|movimentação|d\.\s*lan(?:c|ç)am)/i.test(c)
     );
     const hasValor = row.some(c =>
       /^(valor|vlr|montante|quantia|amount|importância)$/i.test(c) ||
@@ -431,7 +486,7 @@ function detectarColunas(headerRow, dataRows, dataReferencia = null) {
 
   // === Coluna DATA ===
   let colData = stats.findIndex(s =>
-    /^(data|dt|date|dia)$/i.test(s.header) ||
+    /^(data\s*e?\s*hora|data|dt|date|dia)$/i.test(s.header) ||
     /^d\.\s*lan/i.test(s.header) ||
     /^data\s*(do)?\s*movimento/i.test(s.header)
   );
@@ -467,13 +522,21 @@ function detectarColunas(headerRow, dataRows, dataReferencia = null) {
     colDesc = best;
   }
 
-  // === Coluna TIPO (opcional) ===
-  let colTipo = stats.findIndex((s, i) =>
+  // === Coluna OPERAÇÃO (ex: "Transação", "Operação", "Tipo de operação") ===
+  // Quando existe, concatenamos com a descrição pra dar mais contexto à IA
+  // ("Pix enviado - Maria Eduarda" em vez de só "Maria Eduarda")
+  let colOperacao = stats.findIndex((s, i) =>
     i !== colData && i !== colValor && i !== colDesc &&
-    /^(tipo|categoria|classifi|tipo\s*compra|natureza|operação)/i.test(s.header)
+    /^(transa[çc][ãa]o|opera[çc][ãa]o|tipo\s*(de\s*)?(opera|transa|movimento|lan[çc])|lan[çc]amento)/i.test(s.header)
   );
 
-  return { colData, colValor, colDesc, colTipo, stats };
+  // === Coluna TIPO (opcional, ex: "Tipo de compra") ===
+  let colTipo = stats.findIndex((s, i) =>
+    i !== colData && i !== colValor && i !== colDesc && i !== colOperacao &&
+    /^(tipo|categoria|classifi|natureza)/i.test(s.header)
+  );
+
+  return { colData, colValor, colDesc, colOperacao, colTipo, stats };
 }
 
 function pickByCount(stats, field) {
