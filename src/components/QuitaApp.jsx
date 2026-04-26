@@ -523,18 +523,25 @@ const [state, setState] = useState(DEFAULT_STATE);
   };
 
   // Detecta fatura BTG e usa parser determinístico (datas corretas, sem alucinação da AI).
+  // Parser determinístico de planilhas estruturadas (faturas/extratos de qualquer banco).
+  // Detecta colunas Data/Descrição/Valor dinamicamente, sem hardcode de instituição.
   // Categorização continua via Claude, mas só com descrição+valor (sem chance de inventar data).
   // Recebe { buffer, fileName } pra funcionar inclusive com arquivos que vieram via fluxo de senha.
-  const processarFaturaBTG = async ({ buffer, fileName }) => {
+  const processarExcelEstruturado = async ({ buffer, fileName }) => {
     setPdfParsing(true); setImportStep("pdf-loading");
     try {
       const { parseFaturaExcel } = await import('../services/parseFaturaExcel');
       const { transacoes, avisos } = await parseFaturaExcel({ buffer, fileName });
 
       if (transacoes.length === 0) {
-        setToast("Nenhuma transação encontrada na fatura");
-        setTimeout(() => setToast(null), 2500);
-        setImportStep(null); setPdfParsing(false); return;
+        // Parser não conseguiu — fallback pra IA com o conteúdo bruto
+        console.warn('[Quita] Parser determinístico não extraiu transações, usando fallback IA. Avisos:', avisos);
+        const wb = XLSX.read(buffer, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+        const txt = raw.map(row => row.filter(c => String(c).trim()).join(' | ')).filter(l => l.trim().length > 3).slice(0, 200).join('\n');
+        sendToAI(txt, false);
+        return;
       }
 
       const catDict = state.catDict || {};
@@ -560,12 +567,14 @@ const [state, setState] = useState(DEFAULT_STATE);
         cats = parsed.cats || [];
       } catch (_) { /* se falhar, vai tudo pra "Outros" */ }
 
+      // t.data já é string "YYYY-MM-DDTHH:MM:SS" no fuso local (parser garante).
+      // O <input type="date"> faz slice(0,10) e o new Date() interpreta como local sem deslocar.
       const preview = transacoes.map((t, i) => ({
         id: Date.now() + i,
         name: t.descricao,
         amount: t.valor,
         category: CATEGORIES.includes(cats[i]) ? cats[i] : "Outros",
-        date: t.data.toISOString().slice(0, 10),
+        date: t.data,
         selected: true,
       }));
 
@@ -573,12 +582,13 @@ const [state, setState] = useState(DEFAULT_STATE);
       setImportStep("pdf-preview");
 
       if (avisos.length > 0) {
-        setToast(`${avisos.length} linha(s) ignoradas (data ou valor inválido)`);
+        console.warn('[Quita] Avisos do parser:', avisos);
+        setToast(`${avisos.length} linha(s) ignoradas (revise o console)`);
         setTimeout(() => setToast(null), 4000);
       }
     } catch (err) {
       console.error(err);
-      setToast("Erro ao processar fatura: " + (err.message || ""));
+      setToast("Erro ao processar planilha: " + (err.message || ""));
       setTimeout(() => setToast(null), 4000);
       setImportStep(null);
     }
@@ -594,15 +604,10 @@ const [state, setState] = useState(DEFAULT_STATE);
       const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
       if (raw.length < 2) { setToast("Planilha vazia"); setTimeout(() => setToast(null), 2500); return 'ok'; }
 
-      // Detecta fatura BTG pelo cabeçalho ("Fatura Cartão de Crédito" + "Vencimento")
-      const topo = raw.slice(0, 20).flat().map(c => String(c).toLowerCase()).join(' ');
-      const ehFaturaBTG = /fatura.*cart[aã]o.*cr[ée]dito/.test(topo) && /vencimento/.test(topo);
-
-      if (ehFaturaBTG) {
-        processarFaturaBTG({ buffer: arrayBuffer, fileName: file ? file.name : '' });
-      } else {
-        sendToAI(raw.map(row => row.filter(c => String(c).trim()).join(" | ")).filter(l => l.trim().length > 3).slice(0, 200).join("\n"), false);
-      }
+      // Sempre tenta o parser determinístico primeiro (genérico pra qualquer banco).
+      // Ele detecta colunas Data/Descrição/Valor dinamicamente. Se não achar tabela,
+      // a função internamente faz fallback pra IA com o conteúdo bruto.
+      processarExcelEstruturado({ buffer: arrayBuffer, fileName: file ? file.name : '' });
     } catch (err) {
       const msg = String(err.message || err).toLowerCase();
       if (msg.includes('password') || msg.includes('encrypt') || msg.includes('cfb')) {
