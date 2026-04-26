@@ -201,8 +201,37 @@ const [state, setState] = useState(DEFAULT_STATE);
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
       await sb.from("user_data").upsert({ user_id: user.id, data: s, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+      saveTimer.current = null;
     }, 1000);
   }, [user.id]);
+
+  // ── Salvar imediato (sem debounce) — usar em ações destrutivas como delete/clear ──
+  const pendingState = useRef(null);
+  const saveNow = useCallback(async (s) => {
+    if (!dataLoaded.current) { console.warn('[Quita] saveNow bloqueado — dados ainda não carregados'); return; }
+    if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+    pendingState.current = s;
+    try {
+      await sb.from("user_data").upsert({ user_id: user.id, data: s, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+      pendingState.current = null;
+    } catch (err) {
+      console.error('[Quita] saveNow falhou:', err);
+    }
+  }, [user.id]);
+
+  // ── Flush do save pendente antes do unload (F5/fechar aba) ──
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (saveTimer.current && pendingState.current === null) {
+        // Tem debounce pendente — avisa o usuário
+        e.preventDefault();
+        e.returnValue = 'Você tem alterações não salvas. Sair mesmo assim?';
+        return e.returnValue;
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
 
   const addXp = useCallback((amount, msg, applyMultiplier = true) => {
     const prevLevel = state.level;
@@ -418,8 +447,37 @@ const [state, setState] = useState(DEFAULT_STATE);
   const deleteExpense = (expId) => {
     setState(prev => {
       const n = { ...prev, expenses: prev.expenses.filter(e => e.id !== expId) };
-      n.profileCompletion = calcProfile(n); save(n); return n;
+      n.profileCompletion = calcProfile(n);
+      saveNow(n); // save imediato pra deletes não dependerem de debounce
+      return n;
     });
+  };
+
+  const clearAllExpenses = async () => {
+    const total = state.expenses?.length || 0;
+    if (total === 0) {
+      setToast('Nenhum gasto pra apagar');
+      setTimeout(() => setToast(null), 2000);
+      return;
+    }
+    if (!window.confirm(`Tem certeza que quer apagar TODOS os ${total} gastos?\n\nEssa ação não pode ser desfeita.`)) return;
+    if (!window.confirm(`Última confirmação: vou apagar ${total} gastos PERMANENTEMENTE. Continuar?`)) return;
+
+    let novoState;
+    setState(prev => {
+      const n = { ...prev, expenses: [] };
+      n.profileCompletion = calcProfile(n);
+      novoState = n;
+      return n;
+    });
+    // Aguarda o React commitar antes de salvar
+    setTimeout(async () => {
+      if (novoState) {
+        await saveNow(novoState);
+        setToast(`✓ ${total} gastos apagados`);
+        setTimeout(() => setToast(null), 3000);
+      }
+    }, 50);
   };
 
   const handleDetailFatura = async (faturaId, e) => {
@@ -2397,7 +2455,7 @@ const [state, setState] = useState(DEFAULT_STATE);
           {finTab === "expenses" && <ExpensesScreen
             state={state}
             styles={{ph,card,btn,btnOut,input,NavBar:()=>null}}
-            handlers={{updateExpenseCategory,deleteExpense,handleExcelUpload,handlePdfUpload,handleDetailFatura,confirmPdfImport,togglePdfItem,updatePdfItemCategory,addExpense,toggleOcultar}}
+            handlers={{updateExpenseCategory,deleteExpense,clearAllExpenses,handleExcelUpload,handlePdfUpload,handleDetailFatura,confirmPdfImport,togglePdfItem,updatePdfItemCategory,addExpense,toggleOcultar}}
             filters={{monthFilter,setMonthFilter,catFilters,setCatFilters,customRange,setCustomRange,showCustomRange,setShowCustomRange,importStep,setImportStep,pdfParsing,pdfPreview,setPdfPreview,showExpenseForm,setShowExpenseForm,expName,setExpName,expAmount,setExpAmount,expCat,setExpCat,expDate,setExpDate,totalExpenses,rendaTotal,filterByMonth}}
             FinTabs={FinTabs}
           />}

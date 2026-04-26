@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx'
 export default function ExpensesScreen({ state, styles, handlers, filters, FinTabs }) {
   var ph=styles.ph, card=styles.card, btn=styles.btn, btnOut=styles.btnOut, input=styles.input;
   var NavBar=styles.NavBar;
-  var updateExpenseCategory=handlers.updateExpenseCategory, deleteExpense=handlers.deleteExpense;
+  var updateExpenseCategory=handlers.updateExpenseCategory, deleteExpense=handlers.deleteExpense, clearAllExpenses=handlers.clearAllExpenses;
   var handleExcelUpload=handlers.handleExcelUpload, handlePdfUpload=handlers.handlePdfUpload;
   var handleDetailFatura=handlers.handleDetailFatura, confirmPdfImport=handlers.confirmPdfImport;
   var togglePdfItem=handlers.togglePdfItem, updatePdfItemCategory=handlers.updatePdfItemCategory;
@@ -495,6 +495,17 @@ export default function ExpensesScreen({ state, styles, handlers, filters, FinTa
               return <button key={cat} onClick={() => cat === "Todos" ? setCatFilters([]) : toggleCatFilter(cat)} style={{ padding: "6px 12px", borderRadius: 20, fontSize: 12, border: isActive ? "1.5px solid #7B2FF2" : "1.5px solid #E5E5E5", background: isActive ? "linear-gradient(135deg,#EDE9FE,#DDD6FE)" : "#fff", color: isActive ? "#7B2FF2" : "#999", cursor: "pointer", fontWeight: isActive ? 600 : 400 }}>{cat} ({count}{hiddenCount > 0 ? ", "+hiddenCount+" ocultos" : ""})</button>;
             })}
           </div>
+          {clearAllExpenses && state.expenses.filter(e => !e.oculto).length > 0 && (
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+              <button
+                onClick={clearAllExpenses}
+                style={{ padding: "6px 12px", borderRadius: 8, fontSize: 11, border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#B91C1C", cursor: "pointer", fontWeight: 500, display: "flex", alignItems: "center", gap: 5 }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6m5 0V4a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v2"/></svg>
+                Limpar todos os gastos
+              </button>
+            </div>
+          )}
           {CATEGORIES.map(cat => {
             if (catFilters.length > 0 && !catFilters.includes(cat)) return null;
             const ce = expByMonthAll.filter(e => e.category === cat);
