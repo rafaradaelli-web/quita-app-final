@@ -32,8 +32,10 @@ import * as XLSX from 'xlsx';
 
 export async function parseFaturaExcel(input, options = {}) {
   const {
-    diasParaFechamento = 10,
-    parcelaUsaCompetencia = true, // se true, parcelas X>1 caem na competência da fatura
+    parcelaModo = 'vencimento', // 'vencimento' | 'original'
+                                // 'vencimento': parcelas X>1 caem no dia do vencimento da fatura (recomendado, reflete fluxo de caixa real)
+                                // 'original':   mantém a data da compra (preserva histórico)
+                                // Em ambos os casos, a data original fica em origem.dataOriginalCompra.
   } = options;
   let { dataVencimento } = options;
 
@@ -87,17 +89,7 @@ export async function parseFaturaExcel(input, options = {}) {
     };
   }
 
-  // 6) Calcular data de competência (pra parcelas)
-  const dataCompetencia = dataVencimento
-    ? new Date(
-        dataVencimento.getFullYear(),
-        dataVencimento.getMonth(),
-        dataVencimento.getDate() - diasParaFechamento,
-        12, 0, 0
-      )
-    : null;
-
-  // 7) Iterar linhas e extrair transações
+  // 6) Iterar linhas e extrair transações
   const transacoes = [];
   const avisos = [];
   let i = 0;
@@ -169,10 +161,11 @@ export async function parseFaturaExcel(input, options = {}) {
       const total = parseInt(matchParcela[2], 10);
       metaParcela = { atual, total };
 
-      // Parcelas a partir da 2ª caem no mês de competência da fatura
-      // (data original fica preservada em origem.dataOriginalCompra)
-      if (parcelaUsaCompetencia && atual > 1 && dataCompetencia) {
-        dataFinal = dataCompetencia;
+      // Parcelas a partir da 2ª caem no dia do vencimento da fatura
+      // (reflete fluxo de caixa real: é quando o pagamento sai da conta).
+      // Data original da compra é preservada em origem.dataOriginalCompra.
+      if (parcelaModo === 'vencimento' && atual > 1 && dataVencimento) {
+        dataFinal = dataVencimento;
       }
     }
 
@@ -199,7 +192,6 @@ export async function parseFaturaExcel(input, options = {}) {
       qtdTransacoes: transacoes.length,
       qtdAvisos: avisos.length,
       dataVencimento: dataVencimento ? toLocalISO(dataVencimento) : null,
-      dataCompetencia: dataCompetencia ? toLocalISO(dataCompetencia) : null,
       colunasDetectadas: colunas,
     },
   };
@@ -589,5 +581,5 @@ function toLocalISO(d) {
 }
 
 function vazio() {
-  return { total: 0, qtdTransacoes: 0, qtdAvisos: 0, dataVencimento: null, dataCompetencia: null };
+  return { total: 0, qtdTransacoes: 0, qtdAvisos: 0, dataVencimento: null };
 }
