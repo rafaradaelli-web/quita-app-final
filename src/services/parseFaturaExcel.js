@@ -4,28 +4,37 @@
 // Detecta o vencimento automaticamente a partir do nome do arquivo
 // ou das células do topo da planilha.
 //
-// Uso simples:
-//   import { parseFaturaExcel } from './parseFaturaExcel';
-//   const resultado = await parseFaturaExcel(file);
-//   // resultado.transacoes -> array pronto pra inserir no Supabase
-//   // resultado.avisos     -> linhas que precisam de revisão manual
-//   // resultado.resumo     -> total, contagens, datas detectadas
+// Aceita 3 formas de input:
+//   1. File: parseFaturaExcel(file)
+//   2. ArrayBuffer: parseFaturaExcel(arrayBuffer)
+//   3. Objeto: parseFaturaExcel({ buffer: ArrayBuffer, fileName: 'nome.xlsx' })
+//      (use esta quando o arquivo original está protegido por senha
+//       e você já tem o buffer descriptografado)
 
 import * as XLSX from 'xlsx';
 
-export async function parseFaturaExcel(file, options = {}) {
+export async function parseFaturaExcel(input, options = {}) {
   const { diasParaFechamento = 10 } = options;
   let { dataVencimento } = options;
 
-  // 1) Ler o arquivo
-  const buffer = file instanceof File ? await file.arrayBuffer() : file;
+  // 1) Resolver o input
+  let buffer, fileName = '';
+  if (input instanceof File) {
+    buffer = await input.arrayBuffer();
+    fileName = input.name;
+  } else if (input && typeof input === 'object' && input.buffer) {
+    buffer = input.buffer;
+    fileName = input.fileName || '';
+  } else {
+    buffer = input;
+  }
+
   const wb = XLSX.read(buffer, { type: 'array' });
   const sheet = wb.Sheets[wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
 
   // 2) Detectar vencimento (se não veio nas options)
   if (!dataVencimento) {
-    const fileName = file instanceof File ? file.name : '';
     dataVencimento = detectarVencimento(rows, fileName);
   }
 
