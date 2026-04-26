@@ -1,71 +1,91 @@
 // src/services/parseFaturaExcel.js
 //
 // Parser de fatura de cartão exportada em Excel (.xlsx)
-// Resolve os 3 bugs identificados no Quita:
-//   1. Datas no futuro (ano sendo chutado como ano atual)
-//   2. Avalanche de 28/02 (fallback silencioso quando data falha)
-//   3. Parcelas datadas no mês da compra original ao invés do mês de competência
+// Detecta o vencimento automaticamente a partir do nome do arquivo
+// ou das células do topo da planilha.
 //
-// Uso:
+// Uso simples:
 //   import { parseFaturaExcel } from './parseFaturaExcel';
-//   const resultado = await parseFaturaExcel(file, {
-//     dataVencimento: new Date('2026-04-10'),  // vem do input do usuário
-//     diasParaFechamento: 10                    // opcional, padrão 10
-//   });
-//   // resultado.transacoes  -> array pronto pra inserir no Supabase
-//   // resultado.avisos      -> linhas que precisam de revisão manual
-//   // resultado.resumo      -> total, contagens, datas de referência
+//   const resultado = await parseFaturaExcel(file);
+//   // resultado.transacoes -> array pronto pra inserir no Supabase
+//   // resultado.avisos     -> linhas que precisam de revisão manual
+//   // resultado.resumo     -> total, contagens, datas detectadas
 
 import * as XLSX from 'xlsx';
 
 export async function parseFaturaExcel(file, options = {}) {
-  const { dataVencimento, diasParaFechamento = 10 } = options;
-
-  if (!dataVencimento || !(dataVencimento instanceof Date) || isNaN(dataVencimento.getTime())) {
-    throw new Error('parseFaturaExcel: dataVencimento é obrigatória e precisa ser um Date válido.');
-  }
+  const { diasParaFechamento = 10 } = options;
+  let { dataVencimento } = options;
 
   // 1) Ler o arquivo
   const buffer = file instanceof File ? await file.arrayBuffer() : file;
   const wb = XLSX.read(buffer, { type: 'array' });
   const sheet = wb.Sheets[wb.SheetNames[0]];
-  // raw:false força conversão pra string formatada (importante pra datas DD/MM virem como texto)
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
 
-  // 2) Localizar a linha do cabeçalho dinamicamente
-  //    (planilha tem "Total de compras e despesas" no topo, linhas em branco, e só depois o header)
-  const headerIdx = rows.findIndex(r =>
-    Array.isArray(r) &&
-    r.some(c => /^data$/i.test(String(c).trim())) &&
-    r.some(c => /descri/i.test(String(c).trim())) &&
-    r.some(c => /valor/i.test(String(c).trim()))
-  );
-
-  if (headerIdx === -1) {
-    throw new Error('Não encontrei o cabeçalho da fatura (precisa ter colunas Data, Descrição e Valor).');
+  // 2) Detectar vencimento (se não veio nas options)
+  if (!dataVencimento) {
+    const fileName = file instanceof File ? file.name : '';
+    dataVencimento = detectarVencimento(rows, fileName);
   }
 
-  const header = rows[headerIdx].map(c => String(c).trim().toLowerCase());
+  if (!dataVencimento || isNaN(dataVencimento.getTime())) {
+    throw new Error(
+      'Não consegui identificar a data de vencimento da fatura. ' +
+      'Verifique se o nome do arquivo segue o padrão "AAAA-MM-DD_Fatura_..." ' +
+      'ou se a planilha tem a célula "Vencimento" preenchida.'
+    );
+  }
+
+  // 3) Localizar a maior tabela de transações
+  // (pode haver tabelas menores no topo: pagamentos, créditos)
+  const allHeaders = [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (
+      Array.isArray(r) &&
+      r.some(c => /^data$/i.test(String(c).trim())) &&
+      r.some(c => /descri/i.test(String(c).trim())) &&
+      r.some(c => /valor/i.test(String(c).trim()))
+    ) {
+      allHeaders.push(i);
+    }
+  }
+
+  if (allHeaders.length === 0) {
+    throw new Error('Cabeçalho da tabela de transações não encontrado.');
+  }
+
+  const tabelaIdx = allHeaders.reduce((maior, idx) => {
+    let count = 0;
+    for (let j = idx + 1; j < rows.length; j++) {
+      const row = rows[j] || [];
+      if (row.every(c => !String(c).trim())) break;
+      count++;
+    }
+    return count > maior.count ? { idx, count } : maior;
+  }, { idx: allHeaders[0], count: 0 }).idx;
+
+  const header = rows[tabelaIdx].map(c => String(c).trim().toLowerCase());
   const colData = header.findIndex(c => c === 'data');
   const colDesc = header.findIndex(c => /descri/i.test(c));
   const colValor = header.findIndex(c => /valor/i.test(c));
   const colTipo = header.findIndex(c => /tipo/i.test(c));
   const colCartao = header.findIndex(c => /final.*cart/i.test(c));
 
-  // 3) Data de competência da fatura (= mês em que essa fatura impacta o caixa)
+  // 4) Data de competência (mês em que a fatura impacta o caixa)
   const dataCompetencia = new Date(dataVencimento);
   dataCompetencia.setDate(dataCompetencia.getDate() - diasParaFechamento);
-  dataCompetencia.setHours(12, 0, 0, 0); // meio-dia evita pegadinha de fuso (UTC vs São Paulo)
+  dataCompetencia.setHours(12, 0, 0, 0);
 
-  // 4) Iterar linhas, agrupando descrições multi-linha
+  // 5) Iterar linhas, agrupando descrições multi-linha
   const transacoes = [];
   const avisos = [];
-  let i = headerIdx + 1;
+  let i = tabelaIdx + 1;
 
   while (i < rows.length) {
     const row = rows[i] || [];
 
-    // pula linhas totalmente vazias
     if (row.every(c => !String(c).trim())) {
       i++;
       continue;
@@ -73,12 +93,11 @@ export async function parseFaturaExcel(file, options = {}) {
 
     let dataRaw = String(row[colData] || '').trim();
     let descRaw = String(row[colDesc] || '').trim();
-    let valorRaw = String(row[colValor] || '').trim();
+    const valorRaw = String(row[colValor] || '').trim();
     const tipoRaw = colTipo >= 0 ? String(row[colTipo] || '').trim() : '';
     const cartaoRaw = colCartao >= 0 ? String(row[colCartao] || '').trim() : '';
 
-    // 4a) Se a próxima linha não tem data nem valor mas tem texto na descrição,
-    //     ela é continuação (caso "Stars 3640115310 / 36401").
+    // Concatena descrição multi-linha
     while (i + 1 < rows.length) {
       const next = rows[i + 1] || [];
       const nextData = String(next[colData] || '').trim();
@@ -92,7 +111,6 @@ export async function parseFaturaExcel(file, options = {}) {
       }
     }
 
-    // pula se faltam dados essenciais
     if (!dataRaw || !valorRaw) {
       if (descRaw) {
         avisos.push({ linha: i + 1, motivo: 'sem_data_ou_valor', dataRaw, valorRaw, descRaw });
@@ -101,7 +119,6 @@ export async function parseFaturaExcel(file, options = {}) {
       continue;
     }
 
-    // 5) Parse da data
     const dataCompra = parsearDataDDMM(dataRaw, dataVencimento);
     if (!dataCompra) {
       avisos.push({ linha: i + 1, motivo: 'data_invalida', dataRaw, descRaw, valorRaw });
@@ -109,7 +126,6 @@ export async function parseFaturaExcel(file, options = {}) {
       continue;
     }
 
-    // 6) Parse do valor
     const valor = parsearValor(valorRaw);
     if (valor === null) {
       avisos.push({ linha: i + 1, motivo: 'valor_invalido', dataRaw, descRaw, valorRaw });
@@ -117,7 +133,7 @@ export async function parseFaturaExcel(file, options = {}) {
       continue;
     }
 
-    // 7) Detectar parcela "(X/Y)" e ajustar data se não for a 1ª parcela
+    // Detectar parcela (X/Y) e ajustar data se não for a 1ª
     const matchParcela = descRaw.match(/\((\d+)\/(\d+)\)/);
     let dataFinal = dataCompra;
     let metaParcela = null;
@@ -127,8 +143,6 @@ export async function parseFaturaExcel(file, options = {}) {
       const parcelaTotal = parseInt(matchParcela[2], 10);
       metaParcela = { atual: parcelaAtual, total: parcelaTotal };
 
-      // Parcelas a partir da 2ª são "fantasmas" da compra original.
-      // Pra análise mensal fazer sentido, datamos no mês de competência da fatura.
       if (parcelaAtual > 1) {
         dataFinal = new Date(dataCompetencia);
       }
@@ -143,7 +157,7 @@ export async function parseFaturaExcel(file, options = {}) {
       parcela: metaParcela,
       origem: {
         linha: i + 1,
-        dataOriginalCompra: dataCompra, // sempre guardamos a data real da compra
+        dataOriginalCompra: dataCompra,
       },
     });
 
@@ -168,11 +182,73 @@ export async function parseFaturaExcel(file, options = {}) {
 // ---------- helpers ----------
 
 /**
- * Parseia "DD/MM" ou "DD/MM/AAAA" inferindo o ano a partir do vencimento.
- * Regra: se mês > mês do vencimento, é do ano anterior.
- *   Ex: vencimento 10/04/2026, transação "14/07" -> 14/07/2025
- *       vencimento 10/04/2026, transação "29/03" -> 29/03/2026
+ * Detecta o vencimento em 3 lugares (em ordem de confiança):
+ *   1. Nome do arquivo: "AAAA-MM-DD_Fatura_..."
+ *   2. Célula "Vencimento" + cabeçalho "Mês/AAAA"
+ *   3. Apenas "Mês/AAAA" (assume dia 5)
  */
+function detectarVencimento(rows, fileName) {
+  if (fileName) {
+    const m = fileName.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (m) {
+      const d = new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10), 12, 0, 0);
+      if (!isNaN(d.getTime())) return d;
+    }
+  }
+
+  const meses = {
+    janeiro: 1, fevereiro: 2, marco: 3, março: 3, abril: 4, maio: 5, junho: 6,
+    julho: 7, agosto: 8, setembro: 9, outubro: 10, novembro: 11, dezembro: 12,
+  };
+
+  let mesAnoFatura = null;
+  let venDiaMes = null;
+
+  for (let r = 0; r < Math.min(rows.length, 30); r++) {
+    const row = rows[r] || [];
+    for (let c = 0; c < row.length; c++) {
+      const cell = String(row[c] || '').trim();
+
+      const mAno = cell.match(/^(janeiro|fevereiro|mar[çc]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\s*\/\s*(\d{4})$/i);
+      if (mAno) {
+        const nomeMes = mAno[1].toLowerCase().replace('ç', 'c');
+        mesAnoFatura = { mes: meses[nomeMes], ano: parseInt(mAno[2], 10) };
+      }
+
+      if (/^vencimento$/i.test(cell)) {
+        for (let cc = c + 1; cc < row.length; cc++) {
+          const next = String(row[cc] || '').trim();
+          const mDM = next.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
+          if (mDM) {
+            venDiaMes = {
+              dia: parseInt(mDM[1], 10),
+              mes: parseInt(mDM[2], 10),
+              ano: mDM[3] ? parseInt(mDM[3], 10) : null,
+            };
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  if (venDiaMes) {
+    let ano = venDiaMes.ano;
+    if (!ano && mesAnoFatura) ano = mesAnoFatura.ano;
+    if (ano) {
+      const d = new Date(ano, venDiaMes.mes - 1, venDiaMes.dia, 12, 0, 0);
+      if (!isNaN(d.getTime())) return d;
+    }
+  }
+
+  if (mesAnoFatura) {
+    const d = new Date(mesAnoFatura.ano, mesAnoFatura.mes - 1, 5, 12, 0, 0);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  return null;
+}
+
 function parsearDataDDMM(raw, dataVencimento) {
   const m = String(raw).trim().match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
   if (!m) return null;
@@ -191,16 +267,12 @@ function parsearDataDDMM(raw, dataVencimento) {
     ano += 2000;
   }
 
-  // meio-dia local pra blindar contra fuso UTC
   const d = new Date(ano, mes - 1, dia, 12, 0, 0);
   if (isNaN(d.getTime())) return null;
-  if (d.getDate() !== dia || d.getMonth() !== mes - 1) return null; // ex: 31/02
+  if (d.getDate() !== dia || d.getMonth() !== mes - 1) return null;
   return d;
 }
 
-/**
- * Parseia "R$ 1.234,56" -> 1234.56
- */
 function parsearValor(raw) {
   if (raw === null || raw === undefined) return null;
   const cleaned = String(raw)
