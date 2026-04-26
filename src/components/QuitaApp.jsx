@@ -524,11 +524,12 @@ const [state, setState] = useState(DEFAULT_STATE);
 
   // Detecta fatura BTG e usa parser determinístico (datas corretas, sem alucinação da AI).
   // Categorização continua via Claude, mas só com descrição+valor (sem chance de inventar data).
-  const processarFaturaBTG = async (file) => {
+  // Recebe { buffer, fileName } pra funcionar inclusive com arquivos que vieram via fluxo de senha.
+  const processarFaturaBTG = async ({ buffer, fileName }) => {
     setPdfParsing(true); setImportStep("pdf-loading");
     try {
       const { parseFaturaExcel } = await import('../services/parseFaturaExcel');
-      const { transacoes, avisos } = await parseFaturaExcel(file);
+      const { transacoes, avisos } = await parseFaturaExcel({ buffer, fileName });
 
       if (transacoes.length === 0) {
         setToast("Nenhuma transação encontrada na fatura");
@@ -597,8 +598,8 @@ const [state, setState] = useState(DEFAULT_STATE);
       const topo = raw.slice(0, 20).flat().map(c => String(c).toLowerCase()).join(' ');
       const ehFaturaBTG = /fatura.*cart[aã]o.*cr[ée]dito/.test(topo) && /vencimento/.test(topo);
 
-      if (ehFaturaBTG && file) {
-        processarFaturaBTG(file);
+      if (ehFaturaBTG) {
+        processarFaturaBTG({ buffer: arrayBuffer, fileName: file ? file.name : '' });
       } else {
         sendToAI(raw.map(row => row.filter(c => String(c).trim()).join(" | ")).filter(l => l.trim().length > 3).slice(0, 200).join("\n"), false);
       }
